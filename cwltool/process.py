@@ -426,6 +426,8 @@ class Process(object):
         self.requirements = kwargs.get("requirements", []) + self.tool.get("requirements", [])
         self.hints = kwargs.get("hints", []) + self.tool.get("hints", [])
         self.formatgraph = None  # type: Graph
+        self.tool_id = self.tool["id"]
+
         if "loader" in kwargs:
             self.formatgraph = kwargs["loader"].graph
 
@@ -532,11 +534,11 @@ class Process(object):
         builder.debug = kwargs.get("debug")
         builder.mutation_manager = kwargs.get("mutation_manager")
 
-        dockerReq, is_req = self.get_requirement("DockerRequirement")
+        dockerReq, is_req = self.get_requirement("DockerRequirement", kwargs)
         builder.make_fs_access = kwargs.get("make_fs_access") or StdFsAccess
         builder.fs_access = builder.make_fs_access(kwargs["basedir"])
 
-        loadListingReq, _ = self.get_requirement("http://commonwl.org/cwltool#LoadListingRequirement")
+        loadListingReq, _ = self.get_requirement("http://commonwl.org/cwltool#LoadListingRequirement", kwargs)
         if loadListingReq:
             builder.loadListing = loadListingReq.get("loadListing")
 
@@ -602,7 +604,7 @@ class Process(object):
 
     def evalResources(self, builder, kwargs):
         # type: (Builder, Dict[AnyStr, Any]) -> Dict[Text, Union[int, Text]]
-        resourceReq, _ = self.get_requirement("ResourceRequirement")
+        resourceReq, _ = self.get_requirement("ResourceRequirement", kwargs)
         if resourceReq is None:
             resourceReq = {}
         request = {
@@ -655,8 +657,8 @@ class Process(object):
                 else:
                     _logger.info(sl.makeError(u"Unknown hint %s" % (r["class"])))
 
-    def get_requirement(self, feature):  # type: (Any) -> Tuple[Any, bool]
-        return get_feature(self, feature)
+    def get_requirement(self, feature, kwargs={}):  # type: (Any) -> Tuple[Any, bool]
+        return get_feature(self, feature, kwargs)
 
     def visit(self, op):  # type: (Callable[[Dict[Text, Any]], None]) -> None
         op(self.tool)

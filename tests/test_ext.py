@@ -141,3 +141,10 @@ class TestInplaceUpdate(unittest.TestCase):
         finally:
             shutil.rmtree(tmp)
             shutil.rmtree(out)
+
+class TestOverride(unittest.TestCase):
+    def test_job_override(self):
+        self.assertEquals(main([get_data('tests/wf/revsort.cwl'), get_data('tests/wf/revsort-ovr-job.json')]), 0)
+
+    def test_cmdline_override(self):
+        self.assertEquals(main(["--overrides", "overrides.json", get_data('tests/wf/revsort.cwl'), get_data('tests/wf/revsort-job.json')]), 0)

@@ -80,6 +80,7 @@ class ExpressionTool(Process):
         j.hints = self.hints
         j.outdir = None
         j.tmpdir = None
+        j.tool_id = self.tool["id"]
 
         yield j
 
@@ -175,9 +176,9 @@ class CommandLineTool(Process):
         # type: (Dict[Text, Any], **Any) -> None
         super(CommandLineTool, self).__init__(toolpath_object, **kwargs)
 
-    def makeJobRunner(self, use_container=True):  # type: (Optional[bool]) -> JobBase
-        dockerReq, _ = self.get_requirement("DockerRequirement")
-        if dockerReq and use_container:
+    def makeJobRunner(self, **kwargs):  # type: (Optional[bool]) -> JobBase
+        dockerReq, _ = self.get_requirement("DockerRequirement", kwargs)
+        if dockerReq and kwargs.get("use_container", True):
             return DockerCommandLineJob()
         else:
             for t in reversed(self.requirements):
@@ -215,7 +216,7 @@ class CommandLineTool(Process):
                        ("File", "Directory"), _check_adjust)
 
             cmdline = flatten(map(cachebuilder.generate_arg, cachebuilder.bindings))
-            (docker_req, docker_is_req) = self.get_requirement("DockerRequirement")
+            (docker_req, docker_is_req) = self.get_requirement("DockerRequirement", kwargs)
             if docker_req and kwargs.get("use_container") is not False:
                 dockerimg = docker_req.get("dockerImageId") or docker_req.get("dockerPull")
                 cmdline = ["docker", "run", dockerimg] + cmdline
@@ -276,7 +277,7 @@ class CommandLineTool(Process):
 
         reffiles = copy.deepcopy(builder.files)
 
-        j = self.makeJobRunner(kwargs.get("use_container"))
+        j = self.makeJobRunner(**kwargs)
         j.builder = builder
         j.joborder = builder.job
         j.stdin = None
@@ -288,6 +289,8 @@ class CommandLineTool(Process):
         j.requirements = self.requirements
         j.hints = self.hints
         j.name = jobname
+        j.tool_id = self.tool["id"]
+        j.overrides = kwargs.get("overrides", [])
 
         if _logger.isEnabledFor(logging.DEBUG):
             _logger.debug(u"[job %s] initializing from %s%s",
@@ -332,7 +335,7 @@ class CommandLineTool(Process):
         if _logger.isEnabledFor(logging.DEBUG):
             _logger.debug(u"[job %s] command line bindings is %s", j.name, json.dumps(builder.bindings, indent=4))
 
-        dockerReq = self.get_requirement("DockerRequirement")[0]
+        dockerReq = self.get_requirement("DockerRequirement", kwargs)[0]
         if dockerReq and kwargs.get("use_container"):
             out_prefix = kwargs.get("tmp_outdir_prefix")
             j.outdir = kwargs.get("outdir") or tempfile.mkdtemp(prefix=out_prefix)
@@ -344,7 +347,7 @@ class CommandLineTool(Process):
             j.tmpdir = builder.tmpdir
             j.stagedir = builder.stagedir
 
-        initialWorkdir = self.get_requirement("InitialWorkDirRequirement")[0]
+        initialWorkdir = self.get_requirement("InitialWorkDirRequirement", kwargs)[0]
         j.generatefiles = {"class": "Directory", "listing": [], "basename": ""}
         if initialWorkdir:
             ls = []  # type: List[Dict[Text, Any]]
@@ -380,7 +383,7 @@ class CommandLineTool(Process):
                         ls[i] = t["entry"]
             j.generatefiles[u"listing"] = ls
 
-        inplaceUpdateReq = self.get_requirement("http://commonwl.org/cwltool#InplaceUpdateRequirement")[0]
+        inplaceUpdateReq = self.get_requirement("http://commonwl.org/cwltool#InplaceUpdateRequirement", kwargs)[0]
 
         if inplaceUpdateReq:
             j.inplace_update = inplaceUpdateReq["inplaceUpdate"]
@@ -414,12 +417,12 @@ class CommandLineTool(Process):
             adjustDirObjs(builder.bindings, register_reader)
 
         j.environment = {}
-        evr = self.get_requirement("EnvVarRequirement")[0]
+        evr = self.get_requirement("EnvVarRequirement", kwargs)[0]
         if evr:
             for t in evr["envDef"]:
                 j.environment[t["envName"]] = builder.do_eval(t["envValue"])
 
-        shellcmd = self.get_requirement("ShellCommandRequirement")[0]
+        shellcmd = self.get_requirement("ShellCommandRequirement", kwargs)[0]
         if shellcmd:
             cmd = []  # type: List[Text]
             for b in builder.bindings:

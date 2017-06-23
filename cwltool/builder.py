@@ -45,6 +45,7 @@ class Builder(object):
         self.build_job_script = None  # type: Callable[[List[str]], Text]
         self.debug = False  # type: bool
         self.mutation_manager = None  # type: MutationManager
+        self.tool_id = None  # type: Text
 
         # One of "no_listing", "shallow_listing", "deep_listing"
         # Will be default "no_listing" for CWL v1.1

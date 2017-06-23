@@ -127,6 +127,7 @@ class JobBase(object):
         self.generatefiles = None  # type: Dict[Text, Union[List[Dict[Text, Text]], Dict[Text, Text], Text]]
         self.stagedir = None  # type: Text
         self.inplace_update = None  # type: bool
+        self.overrides = None  # type: List[Dict[Text,Dict[Text, Text]]]
 
     def _setup(self):  # type: () -> None
         if not os.path.exists(self.outdir):
@@ -149,7 +150,7 @@ class JobBase(object):
     def _execute(self, runtime, env, rm_tmpdir=True, move_outputs="move"):
         # type: (List[Text], MutableMapping[Text, Text], bool, Text) -> None
 
-        scr, _ = get_feature(self, "ShellCommandRequirement")
+        scr, _ = get_feature(self, "ShellCommandRequirement", {})
 
         shouldquote = None  # type: Callable[[Any], Any]
         if scr:
@@ -320,7 +321,7 @@ class DockerCommandLineJob(JobBase):
             rm_tmpdir=True, move_outputs="move", **kwargs):
         # type: (bool, bool, bool, Text, **Any) -> Union[Tuple[Text, Dict[None, None]], None]
 
-        (docker_req, docker_is_req) = get_feature(self, "DockerRequirement")
+        (docker_req, docker_is_req) = get_feature(self, "DockerRequirement", kwargs)
 
         img_id = None
         env = None  # type: MutableMapping[Text, Text]

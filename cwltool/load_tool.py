@@ -26,10 +26,25 @@ _logger = logging.getLogger("cwltool")
 
 jobloaderctx = {
     u"cwl": "https://w3id.org/cwl/cwl#",
+    u"cwltool": "http://commonwl.org/cwltool#",
     u"path": {u"@type": u"@id"},
     u"location": {u"@type": u"@id"},
     u"format": {u"@type": u"@id"},
     u"id": u"@id"
+}
+
+overrides_ctx = {
+    u"overrideTarget": {u"@type": u"@id"},
+    u"cwltool": "http://commonwl.org/cwltool#",
+    u"overrides": {
+        "@id": "cwltool:overrides",
+        "mapSubject": "overrideTarget",
+        "mapPredicate": "override"
+    },
+    u"override": {
+        "@id": "cwltool:override",
+        "mapSubject": "class"
+    }
 }
 
 def fetch_document(argsworkflow,  # type: Union[Text, dict[Text, Any]]
@@ -276,3 +291,12 @@ def load_tool(argsworkflow,  # type: Union[Text, Dict[Text, Any]]
         strict=strict, fetcher_constructor=fetcher_constructor)
     return make_tool(document_loader, avsc_names, metadata, uri,
                      makeTool, kwargs if kwargs else {})
+
+def resolve_overrides(ov, baseurl):
+    ovloader = Loader(overrides_ctx)
+    ret, _ = ovloader.resolve_all(ov, baseurl)
+    return ret["overrides"]
+
+def load_overrides(ov, baseurl):
+    ovloader = Loader(overrides_ctx)
+    return resolve_overrides(ovloader.fetch(ov), baseurl)

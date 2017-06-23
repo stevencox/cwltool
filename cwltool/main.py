@@ -22,7 +22,7 @@ from schema_salad.sourceline import strip_dup_lineno
 from . import draft2tool, workflow
 from .cwlrdf import printdot, printrdf
 from .errors import UnsupportedRequirement, WorkflowException
-from .load_tool import fetch_document, make_tool, validate_document, jobloaderctx
+from .load_tool import fetch_document, make_tool, validate_document, jobloaderctx, resolve_overrides, load_overrides
 from .mutation import MutationManager
 from .pack import pack
 from .pathmapper import (adjustDirObjs, adjustFileObjs, get_listing,
@@ -196,6 +196,9 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
                         default=False, help="Relax requirements on path names to permit "
                         "spaces and hash characters.", dest="relax_path_checks")
 
+    parser.add_argument("--overrides", type=str,
+                        default=[], help="Read process requirement overrides from file.")
+
     parser.add_argument("workflow", type=Text, nargs="?", default=None)
     parser.add_argument("job_order", nargs=argparse.REMAINDER)
 
@@ -224,14 +227,18 @@ def single_job_executor(t,  # type: Process
     output_dirs.add(kwargs["outdir"])
     kwargs["mutation_manager"] = MutationManager()
 
-    jobReqs = None
+    jobReqs = []
     if "cwl:requirements" in job_order_object:
         jobReqs = job_order_object["cwl:requirements"]
+        del job_order_object["cwl:requirements"]
     elif ("cwl:defaults" in t.metadata and "cwl:requirements" in t.metadata["cwl:defaults"]):
         jobReqs = t.metadata["cwl:defaults"]["cwl:requirements"]
-    if jobReqs:
-        for req in jobReqs:
-            t.requirements.append(req)
+
+    if "http://commonwl.org/cwltool#overrides" in job_order_object:
+        kwargs["overrides"] = resolve_overrides(job_order_object, t.tool["id"])
+        del job_order_object["http://commonwl.org/cwltool#overrides"]
+
+    kwargs["requirements"] = jobReqs
 
     if kwargs.get("default_container"):
         t.requirements.insert(0, {
@@ -644,7 +651,8 @@ def main(argsl=None,  # type: List[str]
                      'relax_path_checks': False,
                      'validate': False,
                      'enable_ga4gh_tool_registry': False,
-                     'ga4gh_tool_registries': []
+                     'ga4gh_tool_registries': [],
+                     'overrides': []
         }.iteritems():
             if not hasattr(args, k):
                 setattr(args, k, v)
@@ -775,6 +783,9 @@ def main(argsl=None,  # type: List[str]
         if isinstance(job_order_object, int):
             return job_order_object
 
+        if args.overrides:
+            args.overrides = load_overrides(file_uri(os.path.abspath(args.overrides)), tool.tool["id"])
+
         try:
             setattr(args, 'basedir', job_order_object[1])
             del args.workflow
@@ -830,8 +841,8 @@ def main(argsl=None,  # type: List[str]
 
     finally:
         _logger.removeHandler(stderr_handler)
-        _logger.addHandler(defaultStreamHandler)
-
+        _logger.addHandler(defaultStreamHandler
+)
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

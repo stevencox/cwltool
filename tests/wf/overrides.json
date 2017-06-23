@@ -1,0 +1,6 @@
+    "cwltool:overrides": {
+        "revtool.cwl": [{
+            "class": "DockerRequirement",
+            "dockerPull": "ubuntu:14.04"
+        }]
+    }

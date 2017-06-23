@@ -1,0 +1,12 @@
+{
+  "input": {
+    "class": "File",
+    "location": "whale.txt"
+  },
+    "cwltool:overrides": {
+        "revtool.cwl": [{
+            "class": "DockerRequirement",
+            "dockerPull": "ubuntu:14.04"
+        }]
+    }
+}
