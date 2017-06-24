@@ -147,4 +147,7 @@ class TestOverride(unittest.TestCase):
         self.assertEquals(main([get_data('tests/wf/revsort.cwl'), get_data('tests/wf/revsort-ovr-job.json')]), 0)
 
     def test_cmdline_override(self):
-        self.assertEquals(main(["--overrides", "overrides.json", get_data('tests/wf/revsort.cwl'), get_data('tests/wf/revsort-job.json')]), 0)
+        self.assertEquals(main(["--overrides",
+            get_data('tests/wf/overrides.json'),
+            get_data('tests/wf/revsort.cwl'),
+            get_data('tests/wf/revsort-job.json')]), 0)
