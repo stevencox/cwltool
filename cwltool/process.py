@@ -657,7 +657,7 @@ class Process(object):
                 else:
                     _logger.info(sl.makeError(u"Unknown hint %s" % (r["class"])))
 
-    def get_requirement(self, feature, kwargs={}):  # type: (Any) -> Tuple[Any, bool]
+    def get_requirement(self, feature, kwargs={}):  # type: (Any, Dict) -> Tuple[Any, bool]
         return get_feature(self, feature, kwargs)
 
     def visit(self, op):  # type: (Callable[[Dict[Text, Any]], None]) -> None
