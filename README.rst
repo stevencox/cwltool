@@ -1,3 +1,10 @@
+
+==================================================================
+Coil - A Fork of the Common Workflow Language tool description 
+reference implementation for the NIH Data Commons
+==================================================================
+
+
 ==================================================================
 Common Workflow Language tool description reference implementation
 ==================================================================
