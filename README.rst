@@ -1,15 +1,20 @@
 
-==================================================================
-Coil - A Fork of the Common Workflow Language tool description 
-reference implementation for the NIH Data Commons
-==================================================================
+========================================================================================
+Coil - A Common Workflow Language Reference Implementation fork for the NIH Data Commons 
+========================================================================================
 
-
-==================================================================
-Common Workflow Language tool description reference implementation
-==================================================================
 
 CWL conformance tests: |Build Status| Travis CI: |Unix Build Status|
+
+Fork Overview:
+--------------
+
+This fork modifies the reference implementation to allow it and derivative tools to run on the NIH Data Commons.
+
+This particular effort aims to execute CWL jobs on a Mesos compute fabric over an iRODS data grid.
+
+Original Overview:
+------------------
 
 .. |Unix Build Status| image:: https://img.shields.io/travis/common-workflow-language/cwltool/master.svg?label=unix%20build
    :target: https://travis-ci.org/common-workflow-language/cwltool
