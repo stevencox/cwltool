@@ -24,6 +24,7 @@ from schema_salad.ref_resolver import Fetcher, Loader, file_uri, uri_file_path
 from schema_salad.sourceline import strip_dup_lineno
 
 from . import draft2tool, workflow
+from . import data_commons
 from .builder import Builder
 from .cwlrdf import printdot, printrdf
 from .errors import UnsupportedRequirement, WorkflowException
@@ -55,6 +56,9 @@ def arg_parser():  # type: () -> argparse.ArgumentParser
     parser.add_argument("--basedir", type=Text)
     parser.add_argument("--outdir", type=Text, default=os.path.abspath('.'),
                         help="Output directory, default current directory")
+
+    parser.add_argument("--data-commons", action="store_true", default=False,
+                        help="Send commands to the data commons web API")
 
     parser.add_argument("--no-container", action="store_false", default=True,
                         help="Do not execute jobs in a Docker container, even when specified by the CommandLineTool",
@@ -830,8 +834,13 @@ def main(argsl=None,  # type: List[str]
 
             make_tool_kwds["find_default_container"] = functools.partial(find_default_container, args)
 
+            # pass the datacommons makeTool
+            if args.data_commons:
+                makeTool = data_commons.makeDataCommonsTool
+
             tool = make_tool(document_loader, avsc_names, metadata, uri,
                              makeTool, make_tool_kwds)
+
             if args.make_template:
                 yaml.safe_dump(generate_input_template(tool), sys.stdout,
                                default_flow_style=False, indent=4,
