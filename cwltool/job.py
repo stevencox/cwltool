@@ -505,10 +505,10 @@ def _job_popen(
         else:
             stderr = sys.stderr
 
-
+        """
         _logger.info ("||STARS||> cmd: %s in: %s out: %s err: %s env: %s cwd: %s" % (commands, stdin, stdout, stderr, env, cwd))
         pivot = Stars (services_endpoints  = [ "https://stars-app.renci.org/marathon"],
-                       scheduler_endpoints = [ "stars-app.renci.org/chronos" ])        
+                       scheduler_endpoints = [ "stars-app.renci.org/chronos" ])
         pivot.scheduler.add_job (name="x-24",
                                  command=' '.join (commands),
                                  owner="ted@job.org",
@@ -522,7 +522,7 @@ def _job_popen(
                                      ]
                                  ],
                                  execute_now=True)
-        
+        """
         sp = subprocess.Popen(commands,
                               shell=False,
                               close_fds=not onWindows(),
