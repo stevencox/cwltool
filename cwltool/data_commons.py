@@ -186,19 +186,17 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
 
 
 """
-Make a tool object from a loaded cwl spec object
+Make a tool object from a loaded cwl workflow/tool object
 """
 def makeDataCommonsTool(cwl_obj, **kwargs):
     # not a cwl object, so stop
     if not isinstance(cwl_obj, dict):
         raise WorkflowException("CWL object not a dict {}".format(cwl_obj))
-        exit()
     # These classes are what we want to wrap
     if cwl_obj.get("class") == "CommandLineTool":
         return DataCommonsCommandLineTool(cwl_obj, **kwargs)
     else:
         raise WorkflowException("Unsupported CWL class type : {}".format(cwl_obj.get("class")))
-        exit()
 
 
 """
