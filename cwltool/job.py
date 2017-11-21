@@ -25,7 +25,6 @@ from .pathmapper import PathMapper, ensure_writable
 from .process import (UnsupportedRequirement, empty_subtree, get_feature,
                       stageFiles)
 from .utils import bytes2str_in_dicts
-from stars.stars import Stars
 
 _logger = logging.getLogger("cwltool")
 
@@ -463,7 +462,7 @@ def _job_popen(
         else:
             stderr = sys.stderr
 
-        
+
         sp = subprocess.Popen(commands,
                               shell=False,
                               close_fds=not onWindows(),
