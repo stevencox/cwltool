@@ -130,7 +130,7 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
 
         try:
             commands = [Text(x) for x in (runtime + self.command_line)]
-            print("Commands: " + str(commands))
+            #print("Commands: " + str(commands))
             rcode = _datacommons_popen(
                 self.name,
                 commands,
@@ -173,10 +173,10 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
         else:
             print(u"[job {}] completed {}".format(self.name, processStatus))
 
-        print(u"[job {}] {}".format(self.name, json.dumps(outputs, indent=4)))
+        #print(u"[job {}] {}".format(self.name, json.dumps(outputs, indent=4)))
 
         # Maybe want some sort of callback
-        #self.output_callback(outputs, processStatus)
+        self.output_callback(outputs, processStatus)
 
 
 """
@@ -196,16 +196,16 @@ class DataCommonsDockerCommandLineJob(DataCommonsCommandLineJob):
             print(self.requirements)
         for req in self.requirements:
             if req["class"] == "DockerRequirement":
-                print("DockerRequirement")
+                #print("DockerRequirement")
                 #TODO add functionality for other docker* fields
                 if "dockerPull" in req:
                     image_tag = req["dockerPull"]
-                    print("dockerPull: {}".format(image_tag))
+                    #print("dockerPull: {}".format(image_tag))
                 else:
                     raise WorkflowException("DockerRequirement specified without image tag")
 
         self.container_command = \
-            "docker run --rm -e IRODS_MOUNT=/renci/irods -v /renci/irods:/irods " + str(image_tag) + " "
+            "docker run --rm -v /renci/irods:/irods " + str(image_tag) + " "
 
         self._execute([], env, rm_tmpdir=rm_tmpdir, move_outputs=move_outputs)
 
@@ -240,7 +240,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         #return super().makePathMapper(reffiles, stagedir, **kwargs)
         pass
 
-    def job(self, job_order, output_calbacks, **kwargs):
+    def job(self, job_order, output_callback, **kwargs):
         # copied and pruned from cwltool.draft2tool.CommandLineTool.job
         #jobname = uniquename(kwargs.get("name", shortname(self.tool.get("id", "job"))))
         datestring = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -261,6 +261,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         j.requirements = self.requirements
         j.hints = self.hints
         j.name = jobname
+        j.output_callback = output_callback
 
         builder.pathmapper = None
         make_path_mapper_kwargs = kwargs
@@ -271,7 +272,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         # need this?
         builder.pathmapper = self.makePathMapper(reffiles, builder.stagedir, **make_path_mapper_kwargs)
         builder.requirements = j.requirements
-        print("builder.pathmapper: " + str(builder.pathmapper))
+        #print("builder.pathmapper: " + str(builder.pathmapper))
 
         # These if statements aren't really doing anything right now
         # maybe convert these into command line stdin/stdout/stderr stream redirection
@@ -302,8 +303,8 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         # change "Location" field on file class to "Path"
         cwltool.pathmapper.visit_class(builder.bindings, ("File","Directory"), locToPath)
 
-        print(builder.generate_arg)
-        print(builder.bindings)
+        #print(builder.generate_arg)
+        #print(builder.bindings)
         j.command_line = flatten(list(map(builder.generate_arg, builder.bindings)))
         j.pathmapper = builder.pathmapper
         yield j
