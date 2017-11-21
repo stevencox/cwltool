@@ -25,7 +25,7 @@ from .pathmapper import PathMapper, ensure_writable
 from .process import (UnsupportedRequirement, empty_subtree, get_feature,
                       stageFiles)
 from .utils import bytes2str_in_dicts
-from stars import Stars
+from stars.stars import Stars
 
 _logger = logging.getLogger("cwltool")
 
@@ -463,24 +463,7 @@ def _job_popen(
         else:
             stderr = sys.stderr
 
-        """
-        _logger.info ("||STARS||> cmd: %s in: %s out: %s err: %s env: %s cwd: %s" % (commands, stdin, stdout, stderr, env, cwd))
-        pivot = Stars (services_endpoints  = [ "https://stars-app.renci.org/marathon"],
-                       scheduler_endpoints = [ "stars-app.renci.org/chronos" ])
-        pivot.scheduler.add_job (name="x-24",
-                                 command=' '.join (commands),
-                                 owner="ted@job.org",
-                                 runAsUser="evryscope",
-                                 schedule="R/3000-01-01T00:00:00Z/PT60M",
-                                 constraints=[
-                                     [
-                                         "hostname",
-                                         "EQUALS",
-                                         "stars-dw4.edc.renci.org"
-                                     ]
-                                 ],
-                                 execute_now=True)
-        """
+        
         sp = subprocess.Popen(commands,
                               shell=False,
                               close_fds=not onWindows(),
