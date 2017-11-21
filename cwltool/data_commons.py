@@ -204,7 +204,7 @@ class DataCommonsDockerCommandLineJob(DataCommonsCommandLineJob):
                 else:
                     raise WorkflowException("DockerRequirement specified without image tag")
 
-        self.container_command =
+        self.container_command = \
             "docker run --rm -e IRODS_MOUNT=/renci/irods -v /renci/irods:/irods " + str(image_tag) + " "
 
         self._execute([], env, rm_tmpdir=rm_tmpdir, move_outputs=move_outputs)
