@@ -4,6 +4,7 @@ import os
 import copy
 import json
 import datetime
+import uuid
 from pprint import pprint
 from typing import Any, Callable, Dict, List, Text, Union, cast
 
@@ -13,6 +14,7 @@ import cwltool.draft2tool
 import cwltool.main
 import cwltool.process
 import cwltool.pathmapper
+import cwltool.workflow
 from cwltool.flatten import flatten
 from cwltool.errors import WorkflowException
 
@@ -130,13 +132,17 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
 
         try:
             commands = [Text(x) for x in (runtime + self.command_line)]
+
             #print("Commands: " + str(commands))
             rcode = _datacommons_popen(
                 self.name,
                 commands,
                 env=env,
                 cwd=self.outdir,
-                container_command=self.container_command
+                container_command=self.container_command,
+                stdin=self.stdin,
+                stdout=self.stdout,
+                stderr=self.stderr
             )
 
             if self.successCodes and rcode in self.successCodes:
@@ -219,6 +225,8 @@ def makeDataCommonsTool(cwl_obj, **kwargs):
         raise WorkflowException("CWL object not a dict {}".format(cwl_obj))
     if cwl_obj.get("class") == "CommandLineTool":
         return DataCommonsCommandLineTool(cwl_obj, **kwargs)
+    elif cwl_obj.get("class") == "Workflow":
+        return cwltool.workflow.Workflow(cwl_obj, **kwargs)
     else:
         raise WorkflowException("Unsupported CWL class type : {}".format(cwl_obj.get("class")))
 
@@ -243,8 +251,8 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
     def job(self, job_order, output_callback, **kwargs):
         # copied and pruned from cwltool.draft2tool.CommandLineTool.job
         #jobname = uniquename(kwargs.get("name", shortname(self.tool.get("id", "job"))))
-        datestring = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        jobname = "datacommonscwl-" + datestring
+        datestring = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
+        jobname = "datacommonscwl-" + datestring + "_" + str(uuid.uuid4())
         builder = self._init_job(job_order, **kwargs)
 
         reffiles = copy.deepcopy(builder.files)
@@ -276,6 +284,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
 
         # These if statements aren't really doing anything right now
         # maybe convert these into command line stdin/stdout/stderr stream redirection
+        """
         if self.tool.get("stdin"):
             with SourceLine(self.tool, "stdin", validate.ValidationException):
                 j.stdin = builder.do_eval(self.tool["stdin"])
@@ -292,6 +301,14 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
                 j.stdout = builder.do_eval(self.tool["stdout"])
                 if os.path.isabs(j.stdout) or ".." in j.stdout or not j.stdout:
                     raise validate.ValidationException("stdout must be a relative path, got '%s'" % j.stdout)
+        """
+        if self.tool.get("stdin"):
+            j.stdin = builder.do_eval(self.tool.get("stdin"))
+        if self.tool.get("stderr"):
+            j.stderr = builder.do_eval(self.tool.get("stderr"))
+        if self.tool.get("stdout"):
+            j.stdout = builder.do_eval(self.tool.get("stdout"))
+
 
         print(u"[job {}] command line bindings is {}".format(j.name, json.dumps(builder.bindings, indent=4)))
 
@@ -316,6 +333,16 @@ class DataCommonsPathMapper(cwltool.pathmapper.PathMapper):
         super().setup(dedup(referenced_files), basedir)
 
 
+class DataCommonsWorkflow(cwltool.workflow.Workflow):
+    def __init__(self, toolpath_object, **kwargs):
+        super(DataCommonsWorkflow, self).__init__(toolpath_object, **kwargs)
+
+    def job(self, job_order, output_callbacks, **kwargs):
+        super(DataCommonsWorkflow, self).job(job_order, output_callbacks, **kwargs)
+
+
+
+
 """
 Send the commands to the data commons API
 """
@@ -325,6 +352,9 @@ def _datacommons_popen(
         env,  # type: Union[MutableMapping[Text, Text], MutableMapping[str, str]]
         cwd,  # type: Text
         container_command=None, # type string
+        stdin=None,
+        stdout=None,
+        stderr=None,
     ):
 
     #print ("||STARS||> cmd: %s in: %s out: %s err: %s env: %s cwd: %s" % (commands, stdin, stdout, stderr, env, cwd))
@@ -334,6 +364,16 @@ def _datacommons_popen(
         scheduler_endpoints = ["stars-app.renci.org/chronos"])
 
     command = " ".join(commands)
+    if stdin:
+        print("adding stdin")
+        command = command + " < " + stdin
+    if stdout:
+        print("adding stdout")
+        command = command + " > " + stdout
+    if stderr:
+        print("adding stderr")
+        command = command + " 2> " + stderr
+
     if container_command:
         command = container_command + " " + command
 
