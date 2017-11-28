@@ -308,8 +308,11 @@ class WorkflowJob(object):
 
     def receive_output(self, step, outputparms, final_output_callback, jobout, processStatus):
         # type: (WorkflowJobStep, List[Dict[Text,Text]], Callable[[Any, Any], Any], Dict[Text,Text], Text) -> None
-
+        #kferriter
+        _logger.info("jobout: {}".format(jobout))
         for i in outputparms:
+            #kferriter
+            _logger.info("parm i: {}".format(i))
             if "id" in i:
                 if i["id"] in jobout:
                     self.state[i["id"]] = WorkflowStateItem(i, jobout[i["id"]], processStatus)
@@ -336,6 +339,7 @@ class WorkflowJob(object):
             self.do_output_callback(final_output_callback)
 
     def try_make_job(self, step, final_output_callback, **kwargs):
+        print("WorkflowJob.try_make_job, step: " + str(step))
         # type: (WorkflowJobStep, Callable[[Any, Any], Any], **Any) -> Generator
 
         js_console = kwargs.get("js_console", False)
@@ -343,7 +347,9 @@ class WorkflowJob(object):
 
         inputparms = step.tool["inputs"]
         outputparms = step.tool["outputs"]
-
+        print("WorkflowJob.try_make_job, inputparms: {}, \noutputparms: {}".format(
+            inputparms, outputparms
+        ))
         supportsMultipleInput = bool(self.workflow.get_requirement(
             "MultipleInputFeatureRequirement")[0])
 
@@ -426,9 +432,13 @@ class WorkflowJob(object):
                     _logger.debug(u"[job %s] evaluated job input to %s", step.name, json.dumps(inputobj, indent=4))
                 jobs = step.job(inputobj, callback, **kwargs)
 
+            #kferriter do dependency linking here
+            #jobs = data_commons.set_job_dependencies(jobs)
+
             step.submitted = True
 
             for j in jobs:
+                print("WorkflowJob.try_make_job, j: {}".format(j))
                 yield j
         except WorkflowException:
             raise
@@ -442,6 +452,7 @@ class WorkflowJob(object):
 
     def job(self, joborder, output_callback, **kwargs):
         # type: (Dict[Text, Any], Callable[[Any, Any], Any], **Any) -> Generator
+        print("Workflow.job, joborder: " + str(joborder))
         self.state = {}
         self.processStatus = "success"
 
@@ -710,9 +721,11 @@ class WorkflowStep(Process):
                     if stepfield == "in":
                         param["type"] = "Any"
                     else:
+                        #kferriter
+                        print("step_entry: " + str(step_entry))
                         validation_errors.append(
                             SourceLine(self.tool["out"], n).makeError(
-                                "Workflow step output '%s' does not correspond to" % shortname(step_entry))
+                                "Workflow step output '%s' does not correspond to" % shortname(step_entry["id"]))
                             + "\n" + SourceLine(self.embedded_tool.tool, "outputs").makeError(
                                 "  tool output (expected '%s')" % (
                                     "', '".join(

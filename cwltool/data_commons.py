@@ -17,9 +17,11 @@ import cwltool.pathmapper
 import cwltool.workflow
 from cwltool.flatten import flatten
 from cwltool.errors import WorkflowException
+from cwltool.utils import aslist
 
 from schema_salad.ref_resolver import uri_file_path
 from schema_salad.sourceline import SourceLine, indent
+
 from stars.stars import Stars
 
 def main(args=None):
@@ -181,6 +183,37 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
 
         #print(u"[job {}] {}".format(self.name, json.dumps(outputs, indent=4)))
 
+
+        # evaluate expressions in the outputs field
+        pprint(vars(self.tool.tool))
+        r = []
+        output_schema = self.tool.tool["outputs"]
+        print("output_schema: " + str(output_schema))
+        for output in output_schema:
+            print("output: " + str(output))
+            fragment = cwltool.process.shortname(output["id"])
+            if "outputBinding" in output:
+                binding = output["outputBinding"]
+                globpatterns = []
+                if "glob" in binding:
+                    for gb in aslist(binding["glob"]):
+                        gb = self.builder.do_eval(gb)
+                        if gb:
+                            globpatterns.extend(aslist(gb))
+
+                    outdir = self.outdir
+                    fs_access = self.builder.make_fs_access(outdir)
+                    for gb in globpatterns:
+                        if
+                        prefix = fs_access.glob(builder.outdir)
+                        r.extend([{"location": g,
+                                   "path": fs_access.join(builder.outdir, g[len(prefix[0])+1:]),
+                                   "basename": os.path.basename(g),
+                                   "nameroot": os.path.splitext(os.path.basename(g))[0],
+                                   "nameext": os.path.splitext(os.path.basename(g))[1],
+                                   "class": "File" if fs_access.isfile(g) else "Directory"}
+                                  for g in fs_access.glob(fs_access.join(outdir, gb))])
+        print("r: " + str(r))
         # Maybe want some sort of callback
         self.output_callback(outputs, processStatus)
 
@@ -227,6 +260,7 @@ def makeDataCommonsTool(cwl_obj, **kwargs):
         return DataCommonsCommandLineTool(cwl_obj, **kwargs)
     elif cwl_obj.get("class") == "Workflow":
         return cwltool.workflow.Workflow(cwl_obj, **kwargs)
+        #return DataCommonsWorkflow(cwl_obj, **kwargs)
     else:
         raise WorkflowException("Unsupported CWL class type : {}".format(cwl_obj.get("class")))
 
@@ -270,6 +304,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         j.hints = self.hints
         j.name = jobname
         j.output_callback = output_callback
+        j.tool = self
 
         builder.pathmapper = None
         make_path_mapper_kwargs = kwargs
@@ -310,7 +345,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
             j.stdout = builder.do_eval(self.tool.get("stdout"))
 
 
-        print(u"[job {}] command line bindings is {}".format(j.name, json.dumps(builder.bindings, indent=4)))
+        #print(u"[job {}] command line bindings is {}".format(j.name, json.dumps(builder.bindings, indent=4)))
 
 
         def locToPath(p):
@@ -326,6 +361,40 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         j.pathmapper = builder.pathmapper
         yield j
 
+    def collect_output(self, schema, builder, outdir, fs_access, compute_checksums=True):
+        r = []
+        if "outputBinding" in schema:
+            binding = schema["outputBinding"]
+            globpatterns = []
+
+            from .utils import aslist
+            if "glob" in binding:
+                with SourceLine(binding, "glob", WorkflowException):
+                    for gb in aslist(binding["glob"]):
+                        gb = builder.do_eval(gb)
+                        if gb:
+                            globpatterns.extend(aslist(gb))
+
+                    _logger.info("globpatterns: %s" % str(globpatterns))
+
+                    for gb in globpatterns:
+                        if gb.starswith(outdir):
+                            gb = gb[len(outdir) + 1:]
+                        elif gb == ".":
+                            gb = outdir
+                        elif gb.starswith("/"):
+                            raise WorkflowException("glob patterns must not start with '/'")
+
+                        r.extend([
+                            {
+                                "location": g,
+                                "path": fs_access.join(builder.outdir, g[len(prefix[0])+1:])
+                            }
+                            for g in fs_acess.glob(fs_access.join(outdir, gb))
+                        ])
+        return r
+
+
 class DataCommonsPathMapper(cwltool.pathmapper.PathMapper):
     def __init__(self, referenced_files, basedir):
         self._pathmap = {}
@@ -338,8 +407,39 @@ class DataCommonsWorkflow(cwltool.workflow.Workflow):
         super(DataCommonsWorkflow, self).__init__(toolpath_object, **kwargs)
 
     def job(self, job_order, output_callbacks, **kwargs):
-        super(DataCommonsWorkflow, self).job(job_order, output_callbacks, **kwargs)
+        #super(DataCommonsWorkflow, self).job(job_order, output_callbacks, **kwargs)
+        builder = self._init_job(job_order, **kwargs)
+        wj = WorkflowJob(self, **kwargs)
+        yield wj
+        kwargs["part_of"] = "workflow %s" % wj.name
+        for w in wj.job(builder.job, output_callbacks, **kwargs):
+            yield w
 
+
+class DataCommonsWorkflowJob(cwltool.workflow.WorkflowJob):
+    def __init__(self, workflow, **kwargs):
+        self.workflow = workflow
+        self.tool = workflow.tool
+        self.steps = [DataCommonsWorkflowJobStep(s) for s in workflow.steps]
+        self.state = None
+
+
+"""
+When the cwl document is a workflow with multiple steps, check the inputs and outputs.
+If one job A takes as an input an output of another step B, set step B as a
+parent of job A.
+
+Takes an iterable list of jobs, returns a copy of that list of jobs, with parent fields set.
+"""
+def set_job_dependencies(jobs):
+    joblist = list(jobs)
+    for job in joblist:
+        #pprint(vars(job))
+        job_order_object = job.joborder
+
+
+
+    return joblist
 
 
 
