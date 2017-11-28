@@ -1,0 +1,24 @@
+archive: testfile.tar
+files:
+  - class: File
+    path: testfile0
+  - class: File
+    path: testfile1
+  - class: File
+    path: testfile2
+  - class: File
+    path: testfile3
+  - class: File
+    path: testfile4
+  - class: File
+    path: testfile5
+  - class: File
+    path: testfile6
+  - class: File
+    path: testfile7
+  - class: File
+    path: testfile8
+  - class: File
+    path: testfile9
+
+new_file: testfilerenamed.tar

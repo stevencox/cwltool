@@ -1,0 +1,4 @@
+file:
+    class: File
+    path: /renci/irods/test
+output_file: /renci/irods/cat.stdout
