@@ -431,7 +431,7 @@ class Process(six.with_metaclass(abc.ABCMeta, object)):
         avsc_names: CWL Avro schema object used to validate document
         strict: flag to determine strict validation (fail on unrecognized fields)
         """
-
+        
         self.metadata = kwargs.get("metadata", {})  # type: Dict[Text,Any]
         self.names = None  # type: avro.schema.Names
 
@@ -538,7 +538,7 @@ class Process(six.with_metaclass(abc.ABCMeta, object)):
         debug: enable debugging output
         js_console: enable javascript console output
         """
-
+        
         builder = Builder()
         builder.job = cast(Dict[Text, Union[Dict[Text, Any], List,
                                             Text]], copy.deepcopy(joborder))

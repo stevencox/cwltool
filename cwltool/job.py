@@ -281,6 +281,8 @@ class CommandLineJob(JobBase):
     def run(self, pull_image=True, rm_container=True,
             rm_tmpdir=True, move_outputs="move", **kwargs):
         # type: (bool, bool, bool, Text, **Any) -> None
+        #kferriter
+        _logger.info("kwargs:{}".format(kwargs))
 
         self._setup(kwargs)
 
@@ -426,7 +428,7 @@ class DockerCommandLineJob(JobBase):
             runtime.append(u"--env=%s=%s" % (t, v))
 
         runtime.append(img_id)
-
+        
         self._execute(runtime, env, rm_tmpdir=rm_tmpdir, move_outputs=move_outputs)
 
 

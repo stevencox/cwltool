@@ -236,6 +236,7 @@ class CommandLineTool(Process):
         for ls in fn.get("listing", []):
             self.updatePathmap(os.path.join(outdir, fn["basename"]), pathmap, ls)
 
+
     def job(self,
             job_order,  # type: Dict[Text, Text]
             output_callbacks,  # type: Callable[[Any, Any], Any]

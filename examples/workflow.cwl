@@ -14,8 +14,7 @@ inputs:
 outputs:
   output_archive:
     type: File
-    outputBinding:
-      glob: "#rename/renamed_file"
+    outputSource: rename_step/renamed_file
 
 steps:
   tar_step:
@@ -25,7 +24,7 @@ steps:
         source: "#archive"
       file_list:
         source: "#files"
-    out: [archive_out, standard_out]
+    out: [archive_out]
 
   rename_step:
     run: rename.cwl
