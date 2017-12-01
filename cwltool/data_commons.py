@@ -5,8 +5,11 @@ import copy
 import json
 import datetime
 import uuid
+import functools
 from pprint import pprint
 from typing import Any, Callable, Dict, List, Text, Union, cast
+from functools import partial
+from collections import namedtuple
 
 import cwltool.load_tool
 import cwltool.resolver
@@ -15,6 +18,7 @@ import cwltool.main
 import cwltool.process
 import cwltool.pathmapper
 import cwltool.workflow
+import cwltool.expression
 from cwltool.flatten import flatten
 from cwltool.errors import WorkflowException
 from cwltool.utils import aslist
@@ -23,6 +27,12 @@ from schema_salad.ref_resolver import uri_file_path
 from schema_salad.sourceline import SourceLine, indent
 
 from stars.stars import Stars
+
+import logging
+_logger = logging.getLogger("datacommons")
+_logger.setLevel(logging.DEBUG)
+
+WorkflowStateItem = namedtuple("WorkflowStateItem", ["parameter", "value", "success"])
 
 def main(args=None):
     parser = argparse.ArgumentParser()
@@ -183,7 +193,7 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
 
         #print(u"[job {}] {}".format(self.name, json.dumps(outputs, indent=4)))
 
-
+        """
         # evaluate expressions in the outputs field
         pprint(vars(self.tool.tool))
         r = []
@@ -204,7 +214,7 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
                     outdir = self.outdir
                     fs_access = self.builder.make_fs_access(outdir)
                     for gb in globpatterns:
-                        if
+                        
                         prefix = fs_access.glob(builder.outdir)
                         r.extend([{"location": g,
                                    "path": fs_access.join(builder.outdir, g[len(prefix[0])+1:]),
@@ -214,6 +224,10 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
                                    "class": "File" if fs_access.isfile(g) else "Directory"}
                                   for g in fs_access.glob(fs_access.join(outdir, gb))])
         print("r: " + str(r))
+        """
+        print("outdir: {}".format(self.outdir))
+        #outputs = self.collect_outputs(self.outdir)
+        outputs = self.collect_outputs("/renci/irods")
         # Maybe want some sort of callback
         self.output_callback(outputs, processStatus)
 
@@ -283,10 +297,10 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         pass
 
     def job(self, job_order, output_callback, **kwargs):
-        # copied and pruned from cwltool.draft2tool.CommandLineTool.job
+        # modified from cwltool.draft2tool.CommandLineTool.job
         #jobname = uniquename(kwargs.get("name", shortname(self.tool.get("id", "job"))))
         datestring = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
-        jobname = "datacommonscwl-" + datestring + "_" + str(uuid.uuid4())
+        jobname = "datacommonscwl-" + datestring
         builder = self._init_job(job_order, **kwargs)
 
         reffiles = copy.deepcopy(builder.files)
@@ -305,6 +319,13 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         j.name = jobname
         j.output_callback = output_callback
         j.tool = self
+        j.outdir = kwargs.get("outdir", ".")
+        j.basedir = kwargs.get("basedir", ".")
+        j.outdir = "/renci/irods"
+        j.basedir = "/renci/irods"
+        #kferriter
+        #print("j.outdir: {}".format(j.outdir))
+        #print("j.basedir: {}".format(j.basedir))
 
         builder.pathmapper = None
         make_path_mapper_kwargs = kwargs
@@ -312,13 +333,11 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
             make_path_mapper_kwargs = make_path_mapper_kwargs.copy()
             del make_path_mapper_kwargs["stagedir"]
 
-        # need this?
+        # possibly remove
         builder.pathmapper = self.makePathMapper(reffiles, builder.stagedir, **make_path_mapper_kwargs)
         builder.requirements = j.requirements
-        #print("builder.pathmapper: " + str(builder.pathmapper))
-
-        # These if statements aren't really doing anything right now
-        # maybe convert these into command line stdin/stdout/stderr stream redirection
+        
+        # convert these into command line stdin/stdout/stderr stream redirection
         """
         if self.tool.get("stdin"):
             with SourceLine(self.tool, "stdin", validate.ValidationException):
@@ -347,7 +366,6 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
 
         #print(u"[job {}] command line bindings is {}".format(j.name, json.dumps(builder.bindings, indent=4)))
 
-
         def locToPath(p):
             if "path" not in p and "location" in p:
                 p["path"] = uri_file_path(p["location"])
@@ -355,12 +373,88 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         # change "Location" field on file class to "Path"
         cwltool.pathmapper.visit_class(builder.bindings, ("File","Directory"), locToPath)
 
-        #print(builder.generate_arg)
-        #print(builder.bindings)
         j.command_line = flatten(list(map(builder.generate_arg, builder.bindings)))
         j.pathmapper = builder.pathmapper
+        """
+        j.collect_outputs = partial(
+            super().collect_output_ports, self.tool["outputs"], builder,
+            compute_checksum=kwargs.get("compute_checksum", True),
+            jobname=jobname,
+            readers=None)
+        """
+        
+        j.collect_outputs = partial(self.collect_output_ports, self.tool["outputs"], builder)
         yield j
 
+    def collect_output_ports(self, ports, builder, outdir):
+        ret = {}
+        for i, port in enumerate(ports):
+            #print("port: {}".format(port))
+            with SourceLine(ports, i, WorkflowException):
+                fragment = cwltool.process.shortname(port["id"])
+                try:
+                    ret[fragment] = self.collect_output(port, builder, outdir)
+                except Exception as e:
+                    _logger.debug("Error collecting output for '{}'".format(port["id"]))
+                    raise WorkflowException("Error collecting output for '{}'".format(port["id"]))
+        print("collect_output_ports finished: {}".format(ret))
+        return ret
+
+    def collect_output(self, schema, builder, outdir):
+        r = []
+        if "outputBinding" in schema:
+            binding = schema["outputBinding"]
+            globpatterns = []
+
+            #revmap = partial(revmap_file, builder, outdir)
+
+            if "glob" in binding:
+                for gb in aslist(binding["glob"]):
+                    gb = builder.do_eval(gb)
+                    _logger.debug("gb evaluated to: '{}'".format(gb))
+                    if gb:
+                        globpatterns.extend(aslist(gb))
+                
+                for gb in globpatterns:
+                    g = os.path.join(outdir, gb)
+                    cls = "File" if schema["type"] == "File" else "Directory"
+                    
+                    r.extend([
+                        {"location": g,
+                         "path": g,
+                         "basename": os.path.basename(g),
+                         "nameroot": os.path.splitext(os.path.basename(g))[0],
+                         "nameext": os.path.splitext(os.path.basename(g))[1],
+                         "class": cls}
+                         
+                    ])
+        optional = False
+        single = False
+        if isinstance(schema["type"], list):
+            if "null" in schema["type"]:
+                optional = True
+            if "File" in schema["type"] or "Directory" in schema["type"]:
+                single = True
+        elif schema["type"] == "File" or schema["type"] == "Directory":
+            single = True
+        if "outputEval" in binding:
+            r = builder.do_eval(binding["outputEval"], context=r)
+
+        if single:
+            if not r and not optional:
+                raise WorkflowException("Did not find output file with glob pattern: '{}'".format(globpatterns))
+            elif not r and optional:
+                pass
+            elif isinstance(r,list):
+                if len(r) > 1:
+                    raise WorkflowException("Multiple matches for output item that is a single file")
+                else:
+                    r = r[0]
+
+        #print("collect_output finished: {}".format(r))
+        return r
+
+    """
     def collect_output(self, schema, builder, outdir, fs_access, compute_checksums=True):
         r = []
         if "outputBinding" in schema:
@@ -393,7 +487,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
                             for g in fs_acess.glob(fs_access.join(outdir, gb))
                         ])
         return r
-
+    """
 
 class DataCommonsPathMapper(cwltool.pathmapper.PathMapper):
     def __init__(self, referenced_files, basedir):
@@ -409,19 +503,158 @@ class DataCommonsWorkflow(cwltool.workflow.Workflow):
     def job(self, job_order, output_callbacks, **kwargs):
         #super(DataCommonsWorkflow, self).job(job_order, output_callbacks, **kwargs)
         builder = self._init_job(job_order, **kwargs)
-        wj = WorkflowJob(self, **kwargs)
+        wj = DataCommonsWorkflowJob(self, **kwargs)
         yield wj
         kwargs["part_of"] = "workflow %s" % wj.name
+        
+        #TODO decide where to handle job dependency linking
+        # look at inputs linked to outputs, and set jobs with dependent inputs as children
+        """
+        for step in self.steps:
+            print("step: {}".format(step))
+            print("step input: {}".format(step.tool["inputs"]))
+            print("step output: {}".format(step.tool["outputs"]))
+            for inp in step.tool["inputs"]:
+                ev = builder.do_eval(inp["source"])
+                print(ev)
+        """
         for w in wj.job(builder.job, output_callbacks, **kwargs):
             yield w
+    def visit(self, op):
+        op(self.tool)
+        for s in self.steps:
+            s.visit(op)
 
+class DataCommonsWorkflowJobStep(cwltool.workflow.WorkflowJobStep):
+    def __init__(self, step):
+        self.step = step
+        self.tool = step.tool
+        self.id = step.id
+        self.name = "step " + self.id
+    
+    def job(self, joborder, output_callback, **kwargs):
+        kwargs["part_of"] = self.name
+        kwargs["name"] = self.name
+        _logger.info("[{}] start".format(self.name))
+
+        for j in self.step.job(joborder, output_callback, **kwargs):
+            yield j
 
 class DataCommonsWorkflowJob(cwltool.workflow.WorkflowJob):
     def __init__(self, workflow, **kwargs):
-        self.workflow = workflow
-        self.tool = workflow.tool
+        super().__init__(workflow, **kwargs)
         self.steps = [DataCommonsWorkflowJobStep(s) for s in workflow.steps]
-        self.state = None
+
+    def do_output_callback(self, final_output_callback):
+        #TODO
+        super().do_output_callback(final_output_callback)
+
+    def receive_output(self, step, outputparms, final_output_callback, jobout, processStatus):
+        #TODO
+        super().receive_output(step, outputparms, final_output_callback, jobout, processStatus)
+    
+    """
+    Modifying this to stop it from checking for input file existence
+    """
+    def try_make_job(self, step, final_output_callback, **kwargs):
+        inputparms = step.tool["inputs"]
+        outputparms = step.tool["outputs"]
+        #_logger.debug("[{}] inputparms: {}".format(self.name, inputparms))
+        #_logger.debug("[{}] outputparms: {}".format(self.name, outputparms))
+        
+        valueFrom = {
+                i["id"]: i["valueFrom"] for i in step.tool["inputs"]
+                if "valueFrom" in i}
+        
+        def postScatterEval(io):
+            # type: (Dict[Text, Any]) -> Dict[Text, Any]
+            shortio = {shortname(k): v for k, v in io}
+
+            def valueFromFunc(k, v):  # type: (Any, Any) -> Any
+                if k in valueFrom:
+                    return cwltool.expression.do_eval(
+                        valueFrom[k], shortio, self.workflow.requirements,
+                        None, None, {}, context=v, debug=debug, js_console=js_console)
+                else:
+                    return v
+
+            return {k: valueFromFunc(k, v) for k, v in io.items()}
+        #TODO HANDLE SCATTER
+        
+        inputobj = object_from_state(self.state, inputparms, False, False, "source")
+        #_logger.debug("inputobj: {}".format(inputobj))
+        
+        callback = functools.partial(self.receive_output, step, outputparms, final_output_callback)
+        
+        #_logger.debug("step: {}".format(self.name, step))
+        jobs = step.job(inputobj, callback, **kwargs)
+        for j in jobs:
+            yield j
+
+    def run(self, **kwargs):
+        _logger.info("[{}] run called".format(self.name))
+        pass
+
+    def job(self, joborder, output_callback, **kwargs):
+        #print("self.tool['inputs']: {}".format(self.tool["inputs"]))
+        self.state = {}
+        for inp in self.tool["inputs"]:
+            iid = cwltool.process.shortname(inp["id"])
+            self.state[inp["id"]] = WorkflowStateItem(inp, copy.deepcopy(joborder[iid]), "success")
+
+        for step in self.steps:
+            for out in step.tool["outputs"]:
+                self.state[out["id"]] = None
+        
+        #TODO set chronos job dependencies based on input/output files of workflow steps
+        #kferriter
+        # refactor into set_job_depdencies
+        """
+        i = 0
+        ordered_steps = []
+        stepscopy = copy.deepcopy(self.steps)
+        for step in self.steps:
+            print("DETERMINING DEPENDENCY LINKS")
+            print("step {} input: {}".format(i, step.tool["inputs"]))
+            print("step {} output: {}".format(i, step.tool["outputs"]))
+            i += 1
+            for otherstep in stepscopy:
+                if otherstep == step:
+                    continue
+                for inp in self.tool["inputs"]:
+                    pass
+                    #print(inp) 
+        """
+        for step in self.steps:
+            
+            step.iterator = self.try_make_job(step, output_callback, **kwargs)
+            if step.iterator:
+                for subjob in step.iterator:
+                    yield subjob
+
+
+def object_from_state(state, parms, frag_only, supportsMultipleInput, sourceField, incomplete=False):
+    inputobj = {}
+    for inp in parms:
+        iid = inp["id"]
+        if frag_only:
+            iid = cwltool.process.shortname(iid)
+        if sourceField in inp:
+            connections = aslist(inp[sourceField])
+            for src in connections:
+                if src in state and state[src] is not None:
+                    if not cwltool.workflow.match_types(
+                            inp["type"], state[src], iid, inputobj,
+                            inp.get("linkMerge", ("merge_nested" if len(connections)>1 else None)),
+                            valueFrom=inp.get("valueFrom")):
+                        raise WorkflowException("Type mismatch between source and sink")
+        if inputobj.get(iid) is None and "default" in inp:
+            inputobj[iid] = copy.copy(inp["default"])
+        if iid not in inputobj and ("valueFrom" in inp or incomplete):
+            inputobj[iid] = None
+        if iid not in inputobj:
+            raise WorkflowException("Value for {} not specified".format(inp["id"]))
+    return inputobj
 
 
 """
@@ -436,7 +669,7 @@ def set_job_dependencies(jobs):
     for job in joblist:
         #pprint(vars(job))
         job_order_object = job.joborder
-
+        #TODO
 
 
     return joblist
@@ -457,7 +690,6 @@ def _datacommons_popen(
         stderr=None,
     ):
 
-    #print ("||STARS||> cmd: %s in: %s out: %s err: %s env: %s cwd: %s" % (commands, stdin, stdout, stderr, env, cwd))
     print("STARS: cmd: {}".format(commands))
     pivot = Stars(
         services_endpoints  = ["https://stars-app.renci.org/marathon"],
@@ -497,7 +729,7 @@ def _datacommons_popen(
     #if container_args:
         # add container arguments to the kwargs
     #    kwargs["container"] = container_args
-    pprint(kwargs)
+    
     pivot.scheduler.add_job(
         **kwargs
     )

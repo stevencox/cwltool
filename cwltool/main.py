@@ -264,6 +264,7 @@ def single_job_executor(t,  # type: Process
     final_output = []
     final_status = []
 
+
     def output_callback(out, processStatus):
         final_status.append(processStatus)
         final_output.append(out)
@@ -308,6 +309,10 @@ def single_job_executor(t,  # type: Process
     except Exception as e:
         _logger.exception("Got workflow error")
         raise WorkflowException(Text(e))
+
+    if kwargs.get("data_commons",False):
+        # don't relocate any outputs
+        return (final_output[0], final_status[0])
 
     if final_output and final_output[0] and finaloutdir:
         final_output[0] = relocateOutputs(final_output[0], finaloutdir,
@@ -901,6 +906,12 @@ def main(argsl=None,  # type: List[str]
 
             tool = make_tool(document_loader, avsc_names, metadata, uri,
                              makeTool, make_tool_kwds)
+            #kferriter
+            #print("main tool: {}".format(vars(tool)))
+
+            #if args.data_commons and tool["class"] == "Workflow":
+            #    data_commons.run_datacommonsworkflow(tool, args.job_order)
+            #    return 0
 
             if args.make_template:
                 yaml.safe_dump(generate_input_template(tool), sys.stdout,

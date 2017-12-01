@@ -1,6 +1,6 @@
 cwlVersion: v1.0
 class: CommandLineTool
-baseCommand: ["tar", "cf"]
+baseCommand: ["tar", "-cf", "-"]
 inputs:
   - id: archive_file
     type: string
@@ -13,10 +13,9 @@ inputs:
     inputBinding:
       position: 2
 outputs:
-  - id: standard_out
-    type: stdout
   - id: archive_out
     type: File
     outputBinding:
       glob: $(inputs.archive_file)
-stdout: stdout
+stdout: $(inputs.archive_file)
+

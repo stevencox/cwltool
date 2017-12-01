@@ -1,23 +1,13 @@
-archive: /renci/irods/test.tar
+archive: test.tar
 files:
   - class: File
-    path: /renci/irods/test0
+    path: test0
   - class: File
-    path: /renci/irods/test1
+    path: test1
   - class: File
-    path: /renci/irods/test2
+    path: test2
   - class: File
-    path: /renci/irods/test3
+    path: test3
   - class: File
-    path: /renci/irods/test4
-  - class: File
-    path: /renci/irods/test5
-  - class: File
-    path: /renci/irods/test6
-  - class: File
-    path: /renci/irods/test7
-  - class: File
-    path: /renci/irods/test8
-  - class: File
-    path: /renci/irods/test9
-new_file: /renci/irods/testrenamed.tar
+    path: test4
+new_file: testrenamed.tar

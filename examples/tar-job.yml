@@ -1,2 +1,14 @@
-archive_file: /renci/irods/test.tar
-file_list: [/renci/irods/test0, /renci/irods/test1, /renci/irods/test2, /renci/irods/test3, /renci/irods/test4, /renci/irods/test5, /renci/irods/test6, /renci/irods/test7, /renci/irods/test8, /renci/irods/test9]
+archive_file: test.tar
+file_list:
+  - class: File
+    path: test0
+  - class: File
+    path: test1
+  - class: File
+    path: test2
+  - class: File
+    path: test3
+  - class: File
+    path: test4
+new_file: testrenamed.tar
+
