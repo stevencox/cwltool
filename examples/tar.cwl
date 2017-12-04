@@ -18,4 +18,3 @@ outputs:
     outputBinding:
       glob: $(inputs.archive_file)
 stdout: $(inputs.archive_file)
-
