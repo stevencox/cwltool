@@ -171,25 +171,25 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
         except OSError as e:
             if e.errno == 2:
                 if runtime:
-                    print(u"'%s' not found", runtime[0])
+                    _logger.warn(u"'%s' not found", runtime[0])
                 else:
-                    print(u"'%s' not found", self.command_line[0])
+                    _logger.warn(u"'%s' not found", self.command_line[0])
             else:
-                print("Exception while running job")
+                _logger.warn("Exception while running job")
             processStatus = "permanentFail"
         except WorkflowException as e:
-            print(u"[job %s] Job error:\n%s" % (self.name, e))
+            _logger.info(u"[job %s] Job error:\n%s" % (self.name, e))
             processStatus = "permanentFail"
         except Exception as e:
-            print("Exception while running job: " + str(e))
+            _logger.info("Exception while running job: " + str(e))
             import traceback
             traceback.print_tb(e.__traceback__)
             processStatus = "permanentFail"
 
         if processStatus != "success":
-            print(u"[job {}] completed {}".format(self.name, processStatus))
+            _logger.info(u"[job {}] completed {}".format(self.name, processStatus))
         else:
-            print(u"[job {}] completed {}".format(self.name, processStatus))
+            _logger.info(u"[job {}] completed {}".format(self.name, processStatus))
 
         #print(u"[job {}] {}".format(self.name, json.dumps(outputs, indent=4)))
 
@@ -214,7 +214,7 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
                     outdir = self.outdir
                     fs_access = self.builder.make_fs_access(outdir)
                     for gb in globpatterns:
-                        
+
                         prefix = fs_access.glob(builder.outdir)
                         r.extend([{"location": g,
                                    "path": fs_access.join(builder.outdir, g[len(prefix[0])+1:]),
@@ -225,7 +225,6 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
                                   for g in fs_access.glob(fs_access.join(outdir, gb))])
         print("r: " + str(r))
         """
-        print("outdir: {}".format(self.outdir))
         #outputs = self.collect_outputs(self.outdir)
         outputs = self.collect_outputs("/renci/irods")
         # Maybe want some sort of callback
@@ -246,16 +245,15 @@ class DataCommonsDockerCommandLineJob(DataCommonsCommandLineJob):
         env = self.environment
 
         if hasattr(self, "requirements"):
-            print(self.requirements)
-        for req in self.requirements:
-            if req["class"] == "DockerRequirement":
-                #print("DockerRequirement")
-                #TODO add functionality for other docker* fields
-                if "dockerPull" in req:
-                    image_tag = req["dockerPull"]
-                    #print("dockerPull: {}".format(image_tag))
-                else:
-                    raise WorkflowException("DockerRequirement specified without image tag")
+            for req in self.requirements:
+                if req["class"] == "DockerRequirement":
+                    #print("DockerRequirement")
+                    #TODO add functionality for other docker* fields
+                    if "dockerPull" in req:
+                        image_tag = req["dockerPull"]
+                        #print("dockerPull: {}".format(image_tag))
+                    else:
+                        raise WorkflowException("DockerRequirement specified without image tag")
 
         self.container_command = \
             "docker run --rm -v /renci/irods:/irods " + str(image_tag) + " "
@@ -336,7 +334,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         # possibly remove
         builder.pathmapper = self.makePathMapper(reffiles, builder.stagedir, **make_path_mapper_kwargs)
         builder.requirements = j.requirements
-        
+
         # convert these into command line stdin/stdout/stderr stream redirection
         """
         if self.tool.get("stdin"):
@@ -382,7 +380,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
             jobname=jobname,
             readers=None)
         """
-        
+
         j.collect_outputs = partial(self.collect_output_ports, self.tool["outputs"], builder)
         yield j
 
@@ -397,7 +395,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
                 except Exception as e:
                     _logger.debug("Error collecting output for '{}'".format(port["id"]))
                     raise WorkflowException("Error collecting output for '{}'".format(port["id"]))
-        print("collect_output_ports finished: {}".format(ret))
+        _logger.debug("collect_output_ports finished: {}".format(ret))
         return ret
 
     def collect_output(self, schema, builder, outdir):
@@ -414,11 +412,11 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
                     _logger.debug("gb evaluated to: '{}'".format(gb))
                     if gb:
                         globpatterns.extend(aslist(gb))
-                
+
                 for gb in globpatterns:
                     g = os.path.join(outdir, gb)
                     cls = "File" if schema["type"] == "File" else "Directory"
-                    
+
                     r.extend([
                         {"location": g,
                          "path": g,
@@ -426,7 +424,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
                          "nameroot": os.path.splitext(os.path.basename(g))[0],
                          "nameext": os.path.splitext(os.path.basename(g))[1],
                          "class": cls}
-                         
+
                     ])
         optional = False
         single = False
@@ -506,7 +504,7 @@ class DataCommonsWorkflow(cwltool.workflow.Workflow):
         wj = DataCommonsWorkflowJob(self, **kwargs)
         yield wj
         kwargs["part_of"] = "workflow %s" % wj.name
-        
+
         #TODO decide where to handle job dependency linking
         # look at inputs linked to outputs, and set jobs with dependent inputs as children
         """
@@ -531,7 +529,7 @@ class DataCommonsWorkflowJobStep(cwltool.workflow.WorkflowJobStep):
         self.tool = step.tool
         self.id = step.id
         self.name = "step " + self.id
-    
+
     def job(self, joborder, output_callback, **kwargs):
         kwargs["part_of"] = self.name
         kwargs["name"] = self.name
@@ -552,7 +550,7 @@ class DataCommonsWorkflowJob(cwltool.workflow.WorkflowJob):
     def receive_output(self, step, outputparms, final_output_callback, jobout, processStatus):
         #TODO
         super().receive_output(step, outputparms, final_output_callback, jobout, processStatus)
-    
+
     """
     Modifying this to stop it from checking for input file existence
     """
@@ -561,11 +559,11 @@ class DataCommonsWorkflowJob(cwltool.workflow.WorkflowJob):
         outputparms = step.tool["outputs"]
         #_logger.debug("[{}] inputparms: {}".format(self.name, inputparms))
         #_logger.debug("[{}] outputparms: {}".format(self.name, outputparms))
-        
+
         valueFrom = {
                 i["id"]: i["valueFrom"] for i in step.tool["inputs"]
                 if "valueFrom" in i}
-        
+
         def postScatterEval(io):
             # type: (Dict[Text, Any]) -> Dict[Text, Any]
             shortio = {shortname(k): v for k, v in io}
@@ -580,12 +578,12 @@ class DataCommonsWorkflowJob(cwltool.workflow.WorkflowJob):
 
             return {k: valueFromFunc(k, v) for k, v in io.items()}
         #TODO HANDLE SCATTER
-        
+
         inputobj = object_from_state(self.state, inputparms, False, False, "source")
         #_logger.debug("inputobj: {}".format(inputobj))
-        
+
         callback = functools.partial(self.receive_output, step, outputparms, final_output_callback)
-        
+
         #_logger.debug("step: {}".format(self.name, step))
         jobs = step.job(inputobj, callback, **kwargs)
         for j in jobs:
@@ -605,7 +603,7 @@ class DataCommonsWorkflowJob(cwltool.workflow.WorkflowJob):
         for step in self.steps:
             for out in step.tool["outputs"]:
                 self.state[out["id"]] = None
-        
+
         #TODO set chronos job dependencies based on input/output files of workflow steps
         #kferriter
         # refactor into set_job_depdencies
@@ -623,10 +621,10 @@ class DataCommonsWorkflowJob(cwltool.workflow.WorkflowJob):
                     continue
                 for inp in self.tool["inputs"]:
                     pass
-                    #print(inp) 
+                    #print(inp)
         """
         for step in self.steps:
-            
+
             step.iterator = self.try_make_job(step, output_callback, **kwargs)
             if step.iterator:
                 for subjob in step.iterator:
@@ -690,20 +688,17 @@ def _datacommons_popen(
         stderr=None,
     ):
 
-    print("STARS: cmd: {}".format(commands))
+    _logger.debug("STARS: cmd: {}".format(commands))
     pivot = Stars(
         services_endpoints  = ["https://stars-app.renci.org/marathon"],
         scheduler_endpoints = ["stars-app.renci.org/chronos"])
 
     command = " ".join(commands)
     if stdin:
-        print("adding stdin")
         command = command + " < " + stdin
     if stdout:
-        print("adding stdout")
         command = command + " > " + stdout
     if stderr:
-        print("adding stderr")
         command = command + " 2> " + stderr
 
     if container_command:
@@ -729,7 +724,7 @@ def _datacommons_popen(
     #if container_args:
         # add container arguments to the kwargs
     #    kwargs["container"] = container_args
-    
+
     pivot.scheduler.add_job(
         **kwargs
     )
