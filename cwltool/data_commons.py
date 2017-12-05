@@ -6,7 +6,9 @@ import json
 import datetime
 import uuid
 import functools
-from pprint import pprint
+import re
+import isodate
+import tabulate
 from typing import Any, Callable, Dict, List, Text, Union, cast
 from functools import partial
 from collections import namedtuple
@@ -30,7 +32,7 @@ from stars.stars import Stars
 
 import logging
 _logger = logging.getLogger("datacommons")
-_logger.setLevel(logging.DEBUG)
+_logger.setLevel(logging.INFO)
 
 WorkflowStateItem = namedtuple("WorkflowStateItem", ["parameter", "value", "success"])
 
@@ -137,6 +139,8 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
     Create the command string and run it, and print results
     """
     def _execute(self, runtime, env, rm_tmpdir=True, move_outputs="move"):
+        _logger = logging.getLogger("datacommons")
+
         # pruned from cwltool.job.JobBase._execute
         shouldquote = lambda x: False
 
@@ -178,18 +182,18 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
                 _logger.warn("Exception while running job")
             processStatus = "permanentFail"
         except WorkflowException as e:
-            _logger.info(u"[job %s] Job error:\n%s" % (self.name, e))
+            _logger.warn(u"[job %s] Job error:\n%s" % (self.name, e))
             processStatus = "permanentFail"
         except Exception as e:
-            _logger.info("Exception while running job: " + str(e))
-            import traceback
-            traceback.print_tb(e.__traceback__)
+            _logger.warn("Exception while running job: " + str(e))
+            #import traceback
+            #traceback.print_tb(e.__traceback__)
             processStatus = "permanentFail"
 
         if processStatus != "success":
-            _logger.info(u"[job {}] completed {}".format(self.name, processStatus))
+            _logger.warn(u"[job {}] completed {}".format(self.name, processStatus))
         else:
-            _logger.info(u"[job {}] completed {}".format(self.name, processStatus))
+            _logger.debug(u"[job {}] completed {}".format(self.name, processStatus))
 
         #print(u"[job {}] {}".format(self.name, json.dumps(outputs, indent=4)))
 
@@ -533,7 +537,7 @@ class DataCommonsWorkflowJobStep(cwltool.workflow.WorkflowJobStep):
     def job(self, joborder, output_callback, **kwargs):
         kwargs["part_of"] = self.name
         kwargs["name"] = self.name
-        _logger.info("[{}] start".format(self.name))
+        _logger.debug("[{}] start".format(self.name))
 
         for j in self.step.job(joborder, output_callback, **kwargs):
             yield j
@@ -590,7 +594,7 @@ class DataCommonsWorkflowJob(cwltool.workflow.WorkflowJob):
             yield j
 
     def run(self, **kwargs):
-        _logger.info("[{}] run called".format(self.name))
+        _logger.debug("[{}] run called".format(self.name))
         pass
 
     def job(self, joborder, output_callback, **kwargs):
@@ -672,6 +676,73 @@ def set_job_dependencies(jobs):
 
     return joblist
 
+"""
+Return a string containing a table of upcoming n jobs
+"""
+def show_upcoming_jobs(count=10):
+    stars_client = Stars(
+        services_endpoints  = ["https://stars-app.renci.org/marathon"],
+        scheduler_endpoints = ["stars-app.renci.org/chronos"])
+    jobs = stars_client.scheduler.list()
+
+    i = 0
+    headers = ["Job Name", "Next Scheduled Run"]
+    table = []
+    for j in jobs:
+        name = j["name"]
+        (repeat, start, interval) = j["schedule"].split("/")
+        now = datetime.datetime.now(datetime.timezone.utc)
+
+        if start:
+            start = isodate.parse_datetime(start)
+            if interval:
+                interval = isodate.parse_duration(interval)
+                elapsed_since_start = now - start
+                if elapsed_since_start.total_seconds() < 0:
+                    # hasn't started yet
+                    next_time = start
+                else:
+                    # already started, calculate next
+
+                    # number of job intervals that have passed since the job was started
+                    interval_count = elapsed / interval
+                    frac = interval_count % 1
+                    time_to_next = frac * interval
+                    next_time = now + time_to_next
+        else:
+            # created with no start time, defaulting to now (will be filled in by chronos later)
+            next_time = now
+        table.append([name, str(next_time)])
+    table.sort(key=lambda v: v[1])
+    if len(table) > count:
+        table = table[:count]
+    return tabulate.tabulate(table, headers, tablefmt="grid")
+
+
+def verify_endpoint_job(stars_client, jobname):
+    # TODO update stars package to allow chronos /search functionality
+    # so it is not returning all jobs into local memory
+    jobs = stars_client.scheduler.list()
+    for j in jobs:
+        if j["name"] == jobname:
+            # job was created
+            (repeat, start, interval) = j["schedule"].split("/")
+            repeat_match = re.compile("R(\d)").match(repeat)
+            if repeat_match:
+                repeat = repeat_match.group(1)
+            else:
+                repeat = "infinite"
+
+            if start:
+                start = isodate.parse_datetime(start)
+            else:
+                start = "[immediately]"
+
+            if interval:
+                interval = isodate.parse_duration(interval)
+
+            _logger.info("Job '{}' created at endpoint(s) {}. Repeating {} times, every {}, starting at {}"
+                .format(jobname, stars_client.scheduler.client.servers, repeat, interval, start))
 
 
 """
@@ -710,13 +781,13 @@ def _datacommons_popen(
         "owner":"ted@job.org",
         "runAsUser":"evryscope",
         "schedule":"R//PT60M",
-        "constraints":[
-            [
-                "hostname",
-                "EQUALS",
-                "stars-dw5.edc.renci.org"
-            ]
-        ],
+        #"constraints":[
+        #    [
+        #        "hostname",
+        #        "EQUALS",
+        #        "stars-dw5.edc.renci.org"
+        #    ]
+        #],
         "execute_now":True,
         "shell":True
     }
@@ -728,6 +799,8 @@ def _datacommons_popen(
     pivot.scheduler.add_job(
         **kwargs
     )
+
+    verify_endpoint_job(pivot, jobname)
 
     rcode = 0
     return rcode

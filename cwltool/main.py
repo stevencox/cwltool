@@ -7,6 +7,7 @@ import collections
 import functools
 import json
 import logging
+
 import os
 import sys
 import tempfile
@@ -45,9 +46,9 @@ from ruamel.yaml.comments import Comment, CommentedSeq, CommentedMap
 
 
 _logger = logging.getLogger("cwltool")
-
+_logger.handlers = []
 defaultStreamHandler = logging.StreamHandler()
-_logger.addHandler(defaultStreamHandler)
+#_logger.addHandler(defaultStreamHandler)
 _logger.setLevel(logging.INFO)
 
 
@@ -248,7 +249,7 @@ def single_job_executor(t,  # type: Process
     # type: (...) -> Tuple[Dict[Text, Any], Text]
     final_output = []
     final_status = []
-    
+
 
     def output_callback(out, processStatus):
         final_status.append(processStatus)
@@ -294,11 +295,11 @@ def single_job_executor(t,  # type: Process
     except Exception as e:
         _logger.exception("Got workflow error")
         raise WorkflowException(Text(e))
-    
+
     if kwargs.get("data_commons",False):
         # don't relocate any outputs
         return (final_output[0], final_status[0])
-    
+
     if final_output and final_output[0] and finaloutdir:
         final_output[0] = relocateOutputs(final_output[0], finaloutdir,
                                           output_dirs, kwargs.get("move_outputs"),
@@ -710,12 +711,12 @@ def main(argsl=None,  # type: List[str]
          ):
     # type: (...) -> int
 
-    _logger.removeHandler(defaultStreamHandler)
+    #_logger.removeHandler(defaultStreamHandler)
     if logger_handler:
         stderr_handler = logger_handler
     else:
         stderr_handler = logging.StreamHandler(stderr)
-    _logger.addHandler(stderr_handler)
+    #_logger.addHandler(stderr_handler)
     try:
         if args is None:
             if argsl is None:
@@ -773,7 +774,7 @@ def main(argsl=None,  # type: List[str]
             print(versionfunc())
             return 0
         else:
-            _logger.info(versionfunc())
+            _logger.debug(versionfunc())
 
         if args.print_supported_versions:
             print("\n".join(supportedCWLversions(args.enable_dev)))
@@ -838,20 +839,14 @@ def main(argsl=None,  # type: List[str]
                 make_tool_kwds["job_script_provider"] = dependencies_configuration
 
             make_tool_kwds["find_default_container"] = functools.partial(find_default_container, args)
-            
+
             # pass the datacommons makeTool
             if args.data_commons:
                 makeTool = data_commons.makeDataCommonsTool
 
             tool = make_tool(document_loader, avsc_names, metadata, uri,
                              makeTool, make_tool_kwds)
-            #kferriter
-            #print("main tool: {}".format(vars(tool)))
-            
-            #if args.data_commons and tool["class"] == "Workflow":
-            #    data_commons.run_datacommonsworkflow(tool, args.job_order)
-            #    return 0
-            
+
             if args.make_template:
                 yaml.safe_dump(generate_input_template(tool), sys.stdout,
                                default_flow_style=False, indent=4,
@@ -918,16 +913,16 @@ def main(argsl=None,  # type: List[str]
 
         if isinstance(job_order_object, int):
             return job_order_object
-        
+
         try:
             setattr(args, 'basedir', job_order_object[1])
             del args.workflow
             del args.job_order
-            
+
             #TODO kferriter possibly remove
             if args.data_commons:
                 tool.data_commons = True
-            
+
             (out, status) = executor(tool, job_order_object[0],
                                      makeTool=makeTool,
                                      select_resources=selectResources,
@@ -955,6 +950,10 @@ def main(argsl=None,  # type: List[str]
                     stdout.write(json.dumps(out, indent=4))
                 stdout.write("\n")
                 stdout.flush()
+
+            if args.data_commons:
+                # print out a nice little table
+                _logger.info("\nUpcoming Jobs\n"+ data_commons.show_upcoming_jobs(10))
 
             if status != "success":
                 _logger.warning(u"Final process status is %s", status)
