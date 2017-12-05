@@ -7,6 +7,7 @@ import collections
 import functools
 import json
 import logging
+
 import os
 import sys
 import tempfile
@@ -49,9 +50,9 @@ from ruamel.yaml.comments import Comment, CommentedSeq, CommentedMap
 
 
 _logger = logging.getLogger("cwltool")
-
+_logger.handlers = []
 defaultStreamHandler = logging.StreamHandler()
-_logger.addHandler(defaultStreamHandler)
+#_logger.addHandler(defaultStreamHandler)
 _logger.setLevel(logging.INFO)
 
 
@@ -752,12 +753,12 @@ def main(argsl=None,  # type: List[str]
          ):
     # type: (...) -> int
 
-    _logger.removeHandler(defaultStreamHandler)
+    #_logger.removeHandler(defaultStreamHandler)
     if logger_handler:
         stderr_handler = logger_handler
     else:
         stderr_handler = logging.StreamHandler(stderr)
-    _logger.addHandler(stderr_handler)
+    #_logger.addHandler(stderr_handler)
     try:
         if args is None:
             if argsl is None:
@@ -816,7 +817,7 @@ def main(argsl=None,  # type: List[str]
             print(versionfunc())
             return 0
         else:
-            _logger.info(versionfunc())
+            _logger.debug(versionfunc())
 
         if args.print_supported_versions:
             print("\n".join(supportedCWLversions(args.enable_dev)))
@@ -906,12 +907,6 @@ def main(argsl=None,  # type: List[str]
 
             tool = make_tool(document_loader, avsc_names, metadata, uri,
                              makeTool, make_tool_kwds)
-            #kferriter
-            #print("main tool: {}".format(vars(tool)))
-
-            #if args.data_commons and tool["class"] == "Workflow":
-            #    data_commons.run_datacommonsworkflow(tool, args.job_order)
-            #    return 0
 
             if args.make_template:
                 yaml.safe_dump(generate_input_template(tool), sys.stdout,
@@ -1016,6 +1011,10 @@ def main(argsl=None,  # type: List[str]
                     stdout.write(json.dumps(out, indent=4))
                 stdout.write("\n")
                 stdout.flush()
+
+            if args.data_commons:
+                # print out a nice little table
+                _logger.info("\nUpcoming Jobs\n"+ data_commons.show_upcoming_jobs(10))
 
             if status != "success":
                 _logger.warning(u"Final process status is %s", status)

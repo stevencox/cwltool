@@ -194,7 +194,7 @@ def _compare_records(src, sink, strict=False):
         if (not can_assign_src_to_sink(
                 srcfields.get(key, "null"), sinkfields.get(key, "null"), strict)
             and sinkfields.get(key) is not None):
-            _logger.info("Record comparison failure for %s and %s\n"
+            _logger.debug("Record comparison failure for %s and %s\n"
                          "Did not match fields for %s: %s and %s" %
                          (src["name"], sink["name"], key, srcfields.get(key),
                           sinkfields.get(key)))
@@ -262,7 +262,7 @@ class WorkflowJobStep(object):
         kwargs["part_of"] = self.name
         kwargs["name"] = shortname(self.id)
 
-        _logger.info(u"[%s] start", self.name)
+        _logger.debug(u"[%s] start", self.name)
 
         for j in self.step.job(joborder, output_callback, **kwargs):
             yield j
@@ -304,7 +304,7 @@ class WorkflowJob(object):
             wo = {}
             self.processStatus = "permanentFail"
 
-        _logger.info(u"[%s] completed %s", self.name, self.processStatus)
+        _logger.debug(u"[%s] completed %s", self.name, self.processStatus)
 
         self.did_callback = True
 
@@ -312,7 +312,7 @@ class WorkflowJob(object):
 
     def receive_output(self, step, outputparms, final_output_callback, jobout, processStatus):
         # type: (WorkflowJobStep, List[Dict[Text,Text]], Callable[[Any, Any], Any], Dict[Text,Text], Text) -> None
-        
+
         for i in outputparms:
             if "id" in i:
                 if i["id"] in jobout:
@@ -330,7 +330,7 @@ class WorkflowJob(object):
 
             _logger.warning(u"[%s] completed %s", step.name, processStatus)
         else:
-            _logger.info(u"[%s] completed %s", step.name, processStatus)
+            _logger.debug(u"[%s] completed %s", step.name, processStatus)
 
         step.completed = True
         self.made_progress = True
@@ -448,11 +448,11 @@ class WorkflowJob(object):
             step.completed = True
 
     def run(self, **kwargs):
-        _logger.info(u"[%s] start", self.name)
+        _logger.debug(u"[%s] start", self.name)
 
     def job(self, joborder, output_callback, **kwargs):
         # type: (Dict[Text, Any], Callable[[Any, Any], Any], **Any) -> Generator
-        
+
         self.state = {}
         self.processStatus = "success"
 

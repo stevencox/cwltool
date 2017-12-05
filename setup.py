@@ -56,6 +56,8 @@ setup(name='cwltool',
           'schema-salad >= 2.6.20170927145003, < 3',
           'typing >= 3.5.3',
           'six >= 1.8.0',
+          'isodate',
+          'tabulate'
       ],
       extras_require={
           'deps': ["galaxy-lib >= 17.09.3"]
