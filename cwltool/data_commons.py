@@ -9,6 +9,7 @@ import functools
 import re
 import isodate
 import tabulate
+from pprint import pprint
 from typing import Any, Callable, Dict, List, Text, Union, cast
 from functools import partial
 from collections import namedtuple
@@ -606,38 +607,48 @@ def object_from_state(state, parms, frag_only, supportsMultipleInput, sourceFiel
     return inputobj
 
 
+def get_stars_client():
+    # store client in static function var, so there's only one instance
+    if not hasattr(get_stars_client, "stars_client"):
+        get_stars_client.stars_client = Stars(
+            services_endpoints  = ["https://stars-app.renci.org/marathon"],
+            scheduler_endpoints = ["stars-app.renci.org/chronos"])
+    return get_stars_client.stars_client
+
 """
 When the cwl document is a workflow with multiple steps, check the inputs and outputs.
 If one job A takes as an input an output of another step B, set step B as a
 parent of job A.
 
-Takes an iterable list of workflow steps.
-step.iterable is the job generator for the step, or None
+Takes an iterable list of workflow jobs.
+Each job has a step attribute if it is part of a workflow
 """
 def set_job_dependencies(original_jobs):
-    print("\n\n\n\nDETERMINING DEPENDENCY LINKS")
+    _logger.info("Determining workflow dependency links")
     jobs = []
     # traverse through steps and simplify down the input/ouput structure
+    # in/out lists for each simplified job will contain only string identifiers
+    # ex:
+    # jobs=[{'name':'job1', 'in':['#step1/input1'], 'out':['#step1/output1']},
+    #       {'name':'job2', 'in':['#step1/output1'], 'out':['#step2/output1']}
     for j in original_jobs:
         if not hasattr(j, "step") or not j.step:
-            #job is not part of a workflow
+            #job is not part of a workflow, cannot be dependent on other jobs
             continue
         step = j.step
         if not hasattr(step, "iterable") or not step.iterable:
-            # this is not a subworkflow job step, skip it
+            # this is not a subworkflow job step, skip it. Could be the root workflow tool
             continue
         new_j = {}
         tool = step.tool
         j_inp = tool["in"]
         j_outp = tool["out"]
-        #print("JOB_INP: {}".format(j_inp))
-        #print("JOB_OUTP: {}".format(j_outp))
 
         #add needed values to new j obj
         new_j["name"] = j.name
         new_j["in"] = []
         for inp in j_inp:
-            print("INP: {}".format(inp))
+            _logger.debug("step in: {}".format(inp))
             if "valueFrom" in inp and "source" not in inp:
                 print("Does not currently support valueFrom. Use source")
                 return
@@ -651,19 +662,18 @@ def set_job_dependencies(original_jobs):
             new_j["in"].append(source)
         new_j["out"] = []
         for outp in j_outp:
-            print("OUTP: {}".format(outp))
+            _logger.debug("step out: {}".format(outp))
             if isinstance(outp, str):
                 id = outp[outp.rfind("#"):]
             elif "id" in outp:
                 id = outp["id"]
                 id = id[id.rfind("#"):]
             else:
-                print("Step out field misformatted")
+                print("Out field for step is misformatted")
                 return
             new_j["out"].append(id)
-        #print("NEW_J: {}".format(new_j))
+
         jobs.append(new_j)
-    #print(jobs)
 
     # iterate through jobs. look at their inputs
     # for each input, loop through other steps and see if an output matches it
@@ -675,8 +685,7 @@ def set_job_dependencies(original_jobs):
             for other_j in [other_j for other_j in jobs if other_j["name"] != j["name"]]:
                 if inp in other_j["out"]:
                     j["parents"].append(other_j["name"])
-    print("DEPENDENCIES DETERMINED")
-    #print("jobs: {}".format(jobs))
+    _logger.debug("dependencies determined")
     update_dependencies_in_chronos(jobs)
 
 """
@@ -685,14 +694,11 @@ Take a list of dict objects. Each dict is in the format:
 For each element, attempt to update a job with given name, by adding parent jobs to it.
 """
 def update_dependencies_in_chronos(job_list):
-    stars_client = Stars(
-        services_endpoints  = ["https://stars-app.renci.org/marathon"],
-        scheduler_endpoints = ["stars-app.renci.org/chronos"])
+    stars_client = get_stars_client()
     chronos_client = stars_client.scheduler.client
     for j in job_list:
         # get first job in chronos with this name
         chronos_job = chronos_client.search(name=j["name"])[0]
-        print("chronos_job: {}".format(chronos_job))
         if len(j["parents"]) == 0:
             # is a root level job, is dependent on nothing
             # set to run immediately
@@ -703,21 +709,122 @@ def update_dependencies_in_chronos(job_list):
                 chronos_job["parents"] = []
             for p in j["parents"]:
                 if p not in chronos_job["parents"]:
-                    print("Adding {} as parent of {}".format(p, j["name"]))
+                    _logger.debug("Adding {} as parent of {}".format(p, j["name"]))
                     chronos_job["parents"].append(p)
             # job has parents, so cannot have schedule field
             del chronos_job["schedule"]
 
-        print("Updating {} in chronos with:\n{}".format(j["name"], chronos_job))
+        _logger.debug("Updating {} in chronos with:\n{}".format(j["name"], chronos_job))
         chronos_client.update(chronos_job)
 
+
 """
-Return a string containing a table of upcoming n jobs
+Get the time of the next chronos run in UTC, given a chronos formatted schedule string
+"""
+def get_next_chronos_run(schedule_str):
+    if not schedule_str:
+        return None
+
+    (repeat, start, interval) = schedule_str.split("/")
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if start:
+        start = isodate.parse_datetime(start)
+        if interval:
+            interval = isodate.parse_duration(interval)
+            elapsed_since_start = now - start
+            if elapsed_since_start.total_seconds() < 0:
+                # hasn't started yet
+                next_time = start
+            else:
+                # already started, calculate next
+                # number of job intervals that have passed since the job was started
+                interval_count = elapsed_since_start / interval
+                frac = interval_count % 1
+                time_to_next = frac * interval
+                next_time = now + time_to_next
+    else:
+        # created with no start time, defaulting to now (will be filled in by chronos later)
+        next_time = now
+
+    # localize time
+    next_time = next_time.replace(tzinfo=datetime.timezone.utc).astimezone(tz=None)
+    return next_time
+
+
+"""
+Look at job dependencies and include that in a table printout of the next [count]
+jobs in chronos
+#TODO implement count limiting. currently prints all jobs in chronos
+#TODO it doesn't appear to be automatically sorting by next scheduled run or by creation time
+"""
+def show_upcoming_jobs_tree(count=20):
+    stars_client = get_stars_client()
+    jobs = stars_client.scheduler.list()
+    headers = ["Job Name", "Next Scheduled Run", "Parent Jobs"]
+    table = []
+    """
+    chronos only gives us child->parent relationships
+    for human readability, it's better to use parent->child visual structure
+    make bi-directional graph structure of parent<->child relationships
+    {
+        'job1': {'next_time': '2017-12-06T21:01:02.773Z', 'children': ['job2', 'job3']},
+        'job2': {'next_time': '', 'children': ['job4'], 'parents': ['job1']},
+        'job4': {'next_time': '', 'children': ['job5', 'job6'], 'parents': ['job1']}
+    }
+    """
+    d = {}
+    for j in jobs:
+        name = j["name"]
+        if "parents" not in j:
+            # root level job
+            if name not in d:
+                d[name] = {}
+            next_time = get_next_chronos_run(j["schedule"])
+            d[name]["next_time"] = isodate.datetime_isoformat(next_time) if next_time else ""
+        else:
+            # child job.
+            # add top level element to dict with parents listed
+            d[name] = {"parents": j["parents"], "next_time": ""}
+            #add the name of this job to the children field of
+            # the parent job in the root level of the d object
+            for parent_name in j["parents"]:
+                if parent_name not in d:
+                    d[parent_name] = {}
+                if "children" not in d[parent_name]:
+                    d[parent_name]["children"] = []
+                d[parent_name]["children"].append(j["name"])
+    #pprint(d)
+
+    # process into a nice looking table
+    # print each job, along with parents
+    # if no parents, show the time it will run
+    for jobname, val in d.items():
+        job_row = [jobname, "", ""]
+        sub_rows = []
+        if "parents" in val:
+            job_row[1] = "[after parents]"
+            i = 0
+            for parent in val["parents"]:
+                if i == 0:
+                    job_row[2] = parent
+                else:
+                    sub_rows.append(["", "", parent])
+        else:
+            # is root level, has a next scheduled run time
+            job_row[1] = val["next_time"]
+        table.append(job_row)
+        table += sub_rows
+
+        next_time = val["next_time"] or "[after parents]"
+
+    return tabulate.tabulate(table, headers, tablefmt="grid")
+
+
+"""
+Return a string containing a table of the next [count] upcoming jobs
 """
 def show_upcoming_jobs(count=10):
-    stars_client = Stars(
-        services_endpoints  = ["https://stars-app.renci.org/marathon"],
-        scheduler_endpoints = ["stars-app.renci.org/chronos"])
+    stars_client = get_stars_client()
     jobs = stars_client.scheduler.list()
 
     i = 0
@@ -726,26 +833,7 @@ def show_upcoming_jobs(count=10):
     for j in jobs:
         name = j["name"]
         if "schedule" in j:
-            (repeat, start, interval) = j["schedule"].split("/")
-            now = datetime.datetime.now(datetime.timezone.utc)
-            if start:
-                start = isodate.parse_datetime(start)
-                if interval:
-                    interval = isodate.parse_duration(interval)
-                    elapsed_since_start = now - start
-                    if elapsed_since_start.total_seconds() < 0:
-                        # hasn't started yet
-                        next_time = start
-                    else:
-                        # already started, calculate next
-                        # number of job intervals that have passed since the job was started
-                        interval_count = elapsed / interval
-                        frac = interval_count % 1
-                        time_to_next = frac * interval
-                        next_time = now + time_to_next
-            else:
-                # created with no start time, defaulting to now (will be filled in by chronos later)
-                next_time = now
+            next_time = get_next_chronos_run(j["schedule"])
         else:
             # job is a dependent
             next_time = ""
@@ -786,8 +874,8 @@ def verify_endpoint_job(stars_client, jobname):
 
 """
 Send the commands to the data commons API.
-Creates the jobs to initially run 10ish years in the future, and every hour after.
-Start time must be updated later in order for them to run
+Creates the jobs to initially run 50yrs in future, and every year after.
+Start time must be reduced later via api in order for them to run before that.
 """
 def _datacommons_popen(
         jobname,
@@ -801,9 +889,7 @@ def _datacommons_popen(
     ):
 
     _logger.debug("STARS: cmd: {}".format(commands))
-    pivot = Stars(
-        services_endpoints  = ["https://stars-app.renci.org/marathon"],
-        scheduler_endpoints = ["stars-app.renci.org/chronos"])
+    pivot = get_stars_client()
 
     command = " ".join(commands)
     if stdin:
@@ -818,7 +904,7 @@ def _datacommons_popen(
 
     far_in_future_iso8601 = isodate.datetime_isoformat(
         datetime.datetime.now(datetime.timezone.utc)
-        + datetime.timedelta(days=365*10))
+        + datetime.timedelta(days=365*50))
     schedule = "R/{}/P1Y".format(far_in_future_iso8601)
     #2017-12-06T21:01:02.773Z
 

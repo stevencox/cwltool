@@ -1022,7 +1022,8 @@ def main(argsl=None,  # type: List[str]
 
             if args.data_commons:
                 # print out a nice little table
-                _logger.info("\nUpcoming Jobs\n"+ data_commons.show_upcoming_jobs(20))
+                #_logger.info("\nUpcoming Jobs\n"+ data_commons.show_upcoming_jobs(20))
+                _logger.info("\nUpcoming Jobs\n" + data_commons.show_upcoming_jobs_tree())
 
             if status != "success":
                 _logger.warning(u"Final process status is %s", status)
