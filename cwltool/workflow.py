@@ -434,7 +434,6 @@ class WorkflowJob(object):
             step.submitted = True
 
             for j in jobs:
-                #print("WorkflowJob.try_make_job, j: {}".format(j))
                 yield j
         except WorkflowException:
             raise
@@ -466,6 +465,7 @@ class WorkflowJob(object):
                     raise WorkflowException(
                         u"Input '%s' not in input object and does not have a default value." % (i["id"]))
 
+
         for s in self.steps:
             for out in s.tool["outputs"]:
                 self.state[out["id"]] = None
@@ -493,6 +493,10 @@ class WorkflowJob(object):
                                 break
                             if newjob:
                                 self.made_progress = True
+
+                                # allow job to reference the workflow step it came from
+                                # necessary for input/output dependency linking
+                                newjob.step = step
                                 yield newjob
                             else:
                                 break
