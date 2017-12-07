@@ -10,5 +10,4 @@ file_list:
     path: test3
   - class: File
     path: test4
-new_file: testrenamed.tar
 

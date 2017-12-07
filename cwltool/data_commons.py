@@ -129,7 +129,6 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
             rm_tmpdir=True, move_outputs="move", **kwargs):
         # type: (bool, bool, bool, Text, **Any) -> None
         self._setup(kwargs)
-
         # Not sure preserving the environment is necessary, as the job is not executing locally
         # might want to send the environment to the Chronos API though
         env = self.environment
@@ -301,8 +300,10 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
     def job(self, job_order, output_callback, **kwargs):
         # modified from cwltool.draft2tool.CommandLineTool.job
         #jobname = uniquename(kwargs.get("name", shortname(self.tool.get("id", "job"))))
+        tool_name = cwltool.process.shortname(self.tool.get("id"))
+        #print("tool name: {}".format(self.tool.get("id")))
         datestring = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
-        jobname = "datacommonscwl-" + datestring
+        jobname = "datacommonscwl-{}-{}".format(datestring, tool_name)
         builder = self._init_job(job_order, **kwargs)
 
         reffiles = copy.deepcopy(builder.files)
@@ -456,40 +457,6 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         #print("collect_output finished: {}".format(r))
         return r
 
-    """
-    def collect_output(self, schema, builder, outdir, fs_access, compute_checksums=True):
-        r = []
-        if "outputBinding" in schema:
-            binding = schema["outputBinding"]
-            globpatterns = []
-
-            from .utils import aslist
-            if "glob" in binding:
-                with SourceLine(binding, "glob", WorkflowException):
-                    for gb in aslist(binding["glob"]):
-                        gb = builder.do_eval(gb)
-                        if gb:
-                            globpatterns.extend(aslist(gb))
-
-                    _logger.info("globpatterns: %s" % str(globpatterns))
-
-                    for gb in globpatterns:
-                        if gb.starswith(outdir):
-                            gb = gb[len(outdir) + 1:]
-                        elif gb == ".":
-                            gb = outdir
-                        elif gb.starswith("/"):
-                            raise WorkflowException("glob patterns must not start with '/'")
-
-                        r.extend([
-                            {
-                                "location": g,
-                                "path": fs_access.join(builder.outdir, g[len(prefix[0])+1:])
-                            }
-                            for g in fs_acess.glob(fs_access.join(outdir, gb))
-                        ])
-        return r
-    """
 
 class DataCommonsPathMapper(cwltool.pathmapper.PathMapper):
     def __init__(self, referenced_files, basedir):
@@ -570,7 +537,7 @@ class DataCommonsWorkflowJob(cwltool.workflow.WorkflowJob):
 
         def postScatterEval(io):
             # type: (Dict[Text, Any]) -> Dict[Text, Any]
-            shortio = {shortname(k): v for k, v in io}
+            shortio = {cwltool.process.shortname(k): v for k, v in io}
 
             def valueFromFunc(k, v):  # type: (Any, Any) -> Any
                 if k in valueFrom:
@@ -608,27 +575,7 @@ class DataCommonsWorkflowJob(cwltool.workflow.WorkflowJob):
             for out in step.tool["outputs"]:
                 self.state[out["id"]] = None
 
-        #TODO set chronos job dependencies based on input/output files of workflow steps
-        #kferriter
-        # refactor into set_job_depdencies
-        """
-        i = 0
-        ordered_steps = []
-        stepscopy = copy.deepcopy(self.steps)
         for step in self.steps:
-            print("DETERMINING DEPENDENCY LINKS")
-            print("step {} input: {}".format(i, step.tool["inputs"]))
-            print("step {} output: {}".format(i, step.tool["outputs"]))
-            i += 1
-            for otherstep in stepscopy:
-                if otherstep == step:
-                    continue
-                for inp in self.tool["inputs"]:
-                    pass
-                    #print(inp)
-        """
-        for step in self.steps:
-
             step.iterator = self.try_make_job(step, output_callback, **kwargs)
             if step.iterator:
                 for subjob in step.iterator:
@@ -664,17 +611,105 @@ When the cwl document is a workflow with multiple steps, check the inputs and ou
 If one job A takes as an input an output of another step B, set step B as a
 parent of job A.
 
-Takes an iterable list of jobs, returns a copy of that list of jobs, with parent fields set.
+Takes an iterable list of workflow steps.
+step.iterable is the job generator for the step, or None
 """
-def set_job_dependencies(jobs):
-    joblist = list(jobs)
-    for job in joblist:
-        #pprint(vars(job))
-        job_order_object = job.joborder
-        #TODO
+def set_job_dependencies(original_jobs):
+    print("\n\n\n\nDETERMINING DEPENDENCY LINKS")
+    jobs = []
+    # traverse through steps and simplify down the input/ouput structure
+    for j in original_jobs:
+        if not hasattr(j, "step") or not j.step:
+            #job is not part of a workflow
+            continue
+        step = j.step
+        if not hasattr(step, "iterable") or not step.iterable:
+            # this is not a subworkflow job step, skip it
+            continue
+        new_j = {}
+        tool = step.tool
+        j_inp = tool["in"]
+        j_outp = tool["out"]
+        #print("JOB_INP: {}".format(j_inp))
+        #print("JOB_OUTP: {}".format(j_outp))
 
+        #add needed values to new j obj
+        new_j["name"] = j.name
+        new_j["in"] = []
+        for inp in j_inp:
+            print("INP: {}".format(inp))
+            if "valueFrom" in inp and "source" not in inp:
+                print("Does not currently support valueFrom. Use source")
+                return
+            # resource urls for the input field and the field it gets it value from
+            id = inp["id"]
+            source = inp["source"]
+            # trailing hash fragment in the resource url is the simple id
+            id = id[id.rfind("#"):]
+            source = source[source.rfind("#"):]
+            #new_s["id"] = id
+            new_j["in"].append(source)
+        new_j["out"] = []
+        for outp in j_outp:
+            print("OUTP: {}".format(outp))
+            if isinstance(outp, str):
+                id = outp[outp.rfind("#"):]
+            elif "id" in outp:
+                id = outp["id"]
+                id = id[id.rfind("#"):]
+            else:
+                print("Step out field misformatted")
+                return
+            new_j["out"].append(id)
+        #print("NEW_J: {}".format(new_j))
+        jobs.append(new_j)
+    #print(jobs)
 
-    return joblist
+    # iterate through jobs. look at their inputs
+    # for each input, loop through other steps and see if an output matches it
+    # if it does, add the jobname of the other step to this this step's parent key
+    # after each step has been checked, if the parent key has items, update in Chronos
+    for j in jobs:
+        j["parents"] = []
+        for inp in j["in"]:
+            for other_j in [other_j for other_j in jobs if other_j["name"] != j["name"]]:
+                if inp in other_j["out"]:
+                    j["parents"].append(other_j["name"])
+    print("DEPENDENCIES DETERMINED")
+    #print("jobs: {}".format(jobs))
+    update_dependencies_in_chronos(jobs)
+
+"""
+Take a list of dict objects. Each dict is in the format:
+{'name': <jobname>, 'parents': [<parentjobname>,...]}
+For each element, attempt to update a job with given name, by adding parent jobs to it.
+"""
+def update_dependencies_in_chronos(job_list):
+    stars_client = Stars(
+        services_endpoints  = ["https://stars-app.renci.org/marathon"],
+        scheduler_endpoints = ["stars-app.renci.org/chronos"])
+    chronos_client = stars_client.scheduler.client
+    for j in job_list:
+        # get first job in chronos with this name
+        chronos_job = chronos_client.search(name=j["name"])[0]
+        print("chronos_job: {}".format(chronos_job))
+        if len(j["parents"]) == 0:
+            # is a root level job, is dependent on nothing
+            # set to run immediately
+            chronos_job["schedule"] = "R1//P1D" #3rd segment doesn't matter with R1
+        else:
+            # is a child job, set parents, and set no schedule
+            if "parents" not in chronos_job:
+                chronos_job["parents"] = []
+            for p in j["parents"]:
+                if p not in chronos_job["parents"]:
+                    print("Adding {} as parent of {}".format(p, j["name"]))
+                    chronos_job["parents"].append(p)
+            # job has parents, so cannot have schedule field
+            del chronos_job["schedule"]
+
+        print("Updating {} in chronos with:\n{}".format(j["name"], chronos_job))
+        chronos_client.update(chronos_job)
 
 """
 Return a string containing a table of upcoming n jobs
@@ -690,30 +725,34 @@ def show_upcoming_jobs(count=10):
     table = []
     for j in jobs:
         name = j["name"]
-        (repeat, start, interval) = j["schedule"].split("/")
-        now = datetime.datetime.now(datetime.timezone.utc)
-
-        if start:
-            start = isodate.parse_datetime(start)
-            if interval:
-                interval = isodate.parse_duration(interval)
-                elapsed_since_start = now - start
-                if elapsed_since_start.total_seconds() < 0:
-                    # hasn't started yet
-                    next_time = start
-                else:
-                    # already started, calculate next
-
-                    # number of job intervals that have passed since the job was started
-                    interval_count = elapsed / interval
-                    frac = interval_count % 1
-                    time_to_next = frac * interval
-                    next_time = now + time_to_next
+        if "schedule" in j:
+            (repeat, start, interval) = j["schedule"].split("/")
+            now = datetime.datetime.now(datetime.timezone.utc)
+            if start:
+                start = isodate.parse_datetime(start)
+                if interval:
+                    interval = isodate.parse_duration(interval)
+                    elapsed_since_start = now - start
+                    if elapsed_since_start.total_seconds() < 0:
+                        # hasn't started yet
+                        next_time = start
+                    else:
+                        # already started, calculate next
+                        # number of job intervals that have passed since the job was started
+                        interval_count = elapsed / interval
+                        frac = interval_count % 1
+                        time_to_next = frac * interval
+                        next_time = now + time_to_next
+            else:
+                # created with no start time, defaulting to now (will be filled in by chronos later)
+                next_time = now
         else:
-            # created with no start time, defaulting to now (will be filled in by chronos later)
-            next_time = now
+            # job is a dependent
+            next_time = ""
         table.append([name, str(next_time)])
-    table.sort(key=lambda v: v[1])
+    #TODO update table printout to contain info about dependent jobs
+    # tree structure?
+    #table.sort(key=lambda v: v[1])
     if len(table) > count:
         table = table[:count]
     return tabulate.tabulate(table, headers, tablefmt="grid")
@@ -746,7 +785,9 @@ def verify_endpoint_job(stars_client, jobname):
 
 
 """
-Send the commands to the data commons API
+Send the commands to the data commons API.
+Creates the jobs to initially run 10ish years in the future, and every hour after.
+Start time must be updated later in order for them to run
 """
 def _datacommons_popen(
         jobname,
@@ -775,12 +816,18 @@ def _datacommons_popen(
     if container_command:
         command = container_command + " " + command
 
+    far_in_future_iso8601 = isodate.datetime_isoformat(
+        datetime.datetime.now(datetime.timezone.utc)
+        + datetime.timedelta(days=365*10))
+    schedule = "R/{}/P1Y".format(far_in_future_iso8601)
+    #2017-12-06T21:01:02.773Z
+
     kwargs = {
-        "name":jobname,
-        "command":command,
-        "owner":"ted@job.org",
-        "runAsUser":"evryscope",
-        "schedule":"R//PT60M",
+        "name": jobname,
+        "command": command,
+        "owner": "ted@job.org",
+        "runAsUser": "evryscope",
+        "schedule": schedule,
         #"constraints":[
         #    [
         #        "hostname",
@@ -788,8 +835,8 @@ def _datacommons_popen(
         #        "stars-dw5.edc.renci.org"
         #    ]
         #],
-        "execute_now":True,
-        "shell":True
+        "execute_now": False,
+        "shell": True
     }
 
     #if container_args:

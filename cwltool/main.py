@@ -292,15 +292,20 @@ def single_job_executor(t,  # type: Process
     jobiter = t.job(job_order_object,
                     output_callback,
                     **kwargs)
-
+    #jobiter = data_commons.set_job_dependencies(jobiter)
+    job_list = []
     try:
         for r in jobiter:
             if r:
+                job_list.append(r)
                 builder = kwargs.get("builder", None)  # type: Builder
                 if builder is not None:
                     r.builder = builder
                 if r.outdir:
                     output_dirs.add(r.outdir)
+                print("calling run on: {}".format(r.name))
+                #print("r: {}".format(vars(r)))
+                #print("r tool: {}".format(vars(r.tool)))
                 r.run(**kwargs)
             else:
                 _logger.error("Workflow cannot make any more progress.")
@@ -312,8 +317,11 @@ def single_job_executor(t,  # type: Process
         raise WorkflowException(Text(e))
 
     if kwargs.get("data_commons",False):
+        # set job dependencies in chronos
+        data_commons.set_job_dependencies(job_list)
         # don't relocate any outputs
         return (final_output[0], final_status[0])
+
 
     if final_output and final_output[0] and finaloutdir:
         final_output[0] = relocateOutputs(final_output[0], finaloutdir,
@@ -1014,7 +1022,7 @@ def main(argsl=None,  # type: List[str]
 
             if args.data_commons:
                 # print out a nice little table
-                _logger.info("\nUpcoming Jobs\n"+ data_commons.show_upcoming_jobs(10))
+                _logger.info("\nUpcoming Jobs\n"+ data_commons.show_upcoming_jobs(20))
 
             if status != "success":
                 _logger.warning(u"Final process status is %s", status)
