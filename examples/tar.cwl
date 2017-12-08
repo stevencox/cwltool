@@ -4,8 +4,6 @@ baseCommand: ["tar", "-cf", "-"]
 inputs:
   - id: archive_file
     type: string
-    inputBinding:
-      position: 1
   - id: file_list
     type:
       type: array

@@ -632,13 +632,19 @@ def set_job_dependencies(original_jobs):
     # jobs=[{'name':'job1', 'in':['#step1/input1'], 'out':['#step1/output1']},
     #       {'name':'job2', 'in':['#step1/output1'], 'out':['#step2/output1']}
     for j in original_jobs:
-        if not hasattr(j, "step") or not j.step:
+        _logger.info("compressing fields of job: {}".format(j))
+        if isinstance(j, cwltool.workflow.WorkflowJob):
+            # this is the wrapper job representing a workflow, skip it
+            continue
+        if not hasattr(j, "step") or not j.step \
+                or not hasattr(j.step, "iterable") or not j.step.iterable:
             #job is not part of a workflow, cannot be dependent on other jobs
+            run_job_now(j.name)
             continue
         step = j.step
-        if not hasattr(step, "iterable") or not step.iterable:
-            # this is not a subworkflow job step, skip it. Could be the root workflow tool
-            continue
+        #if not hasattr(step, "iterable") or not step.iterable:
+        #    # this is not a subworkflow job step, skip it. Could be the root workflow tool
+        #    continue
         new_j = {}
         tool = step.tool
         j_inp = tool["in"]
@@ -655,11 +661,31 @@ def set_job_dependencies(original_jobs):
             # resource urls for the input field and the field it gets it value from
             id = inp["id"]
             source = inp["source"]
+            print("id: '{}', source: '{}'".format(id, source))
             # trailing hash fragment in the resource url is the simple id
             id = id[id.rfind("#"):]
-            source = source[source.rfind("#"):]
+
+
+            if isinstance(source, str):
+                # single source field value
+                source = source[source.rfind("#"):]
+                new_j["in"].append(source)
+            elif isinstance(source, list):
+                # using MultipleInputFeatureRequirement
+                # and this field has multiple input source links
+                # supports linkMerge: merge_flattened or linkMerge: merge_nested
+                # TODO have tested merge_flattened, need to test merge_nestedq
+                for elem in source:
+                    if isinstance(elem, list):
+                        for nested_elem in elem:
+                            nested_elem = nested_elem[nested_elem.rfind("#"):]
+                            new_j["in"].append(nested_elem)
+                    else:
+                        elem = elem[elem.rfind("#"):]
+                        new_j["in"].append(elem)
+
             #new_s["id"] = id
-            new_j["in"].append(source)
+
         new_j["out"] = []
         for outp in j_outp:
             _logger.debug("step out: {}".format(outp))
@@ -687,6 +713,21 @@ def set_job_dependencies(original_jobs):
                     j["parents"].append(other_j["name"])
     _logger.debug("dependencies determined")
     update_dependencies_in_chronos(jobs)
+
+
+"""
+Update a job in chronos with a schedule to run one time starting immediately
+"""
+def run_job_now(jobname):
+    stars_client = get_stars_client()
+    chronos_client = stars_client.scheduler.client
+    chronos_job = chronos_client.search(name=jobname)[0]
+    if "parents" in chronos_job:
+        _logger.warn("Cannot update job '{}' to run now, is dependent job".format(jobname))
+    chronos_job["schedule"] = "R1//P1D"
+    _logger.debug("Setting job '{}' to run now".format(jobname))
+    chronos_client.update(chronos_job)
+
 
 """
 Take a list of dict objects. Each dict is in the format:

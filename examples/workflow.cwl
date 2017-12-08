@@ -14,7 +14,7 @@ inputs:
 outputs:
   output_archive:
     type: File
-    outputSource: rename_step/renamed_file
+    outputSource: "#rename_step/renamed_file"
 
 steps:
   tar_step:
@@ -30,7 +30,7 @@ steps:
     run: rename.cwl
     in:
       original_name:
-        source: tar_step/archive_out
+        source: "#tar_step/archive_out"
       new_name:
         source: "#new_file"
     out: [renamed_file]
