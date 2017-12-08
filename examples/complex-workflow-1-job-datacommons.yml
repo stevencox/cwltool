@@ -1,0 +1,21 @@
+archive: /renci/irods/test.tar
+files:
+  - class: File
+    path: /renci/irods/test0
+  - class: File
+    path: /renci/irods/test1
+  - class: File
+    path: /renci/irods/test2
+  - class: File
+    path: /renci/irods/test3
+  - class: File
+    path: /renci/irods/test4
+touch_files:
+  - /renci/irods/newfile0
+  - /renci/irods/newfile1
+  - /renci/irods/newfile2
+  - /renci/irods/newfile3
+  - /renci/irods/newfile4
+new_archive: /renci/irods/testrenamed.tar
+echo_message: "this is an echo message"
+echo_output_location: /renci/irods/echomessage
