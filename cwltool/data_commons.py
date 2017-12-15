@@ -106,13 +106,6 @@ def main(args=None):
 
 
 """
-Create and return an object that wraps cwltool.job.CommandLineJob
-"""
-def makeJob(tool, job, **kwargs):
-    pass
-
-
-"""
 Subclass cwltool.job.CommandLineJob and simplify behavior
 """
 class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
@@ -197,41 +190,14 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
 
         #print(u"[job {}] {}".format(self.name, json.dumps(outputs, indent=4)))
 
-        """
-        # evaluate expressions in the outputs field
-        pprint(vars(self.tool.tool))
-        r = []
-        output_schema = self.tool.tool["outputs"]
-        print("output_schema: " + str(output_schema))
-        for output in output_schema:
-            print("output: " + str(output))
-            fragment = cwltool.process.shortname(output["id"])
-            if "outputBinding" in output:
-                binding = output["outputBinding"]
-                globpatterns = []
-                if "glob" in binding:
-                    for gb in aslist(binding["glob"]):
-                        gb = self.builder.do_eval(gb)
-                        if gb:
-                            globpatterns.extend(aslist(gb))
 
-                    outdir = self.outdir
-                    fs_access = self.builder.make_fs_access(outdir)
-                    for gb in globpatterns:
+        # we do not use a separate outdir right now.  All files are assumed to be
+        # in the same basedir in the shared filesystem mount, including output files
+        outputs = self.collect_outputs(self.basedir)
 
-                        prefix = fs_access.glob(builder.outdir)
-                        r.extend([{"location": g,
-                                   "path": fs_access.join(builder.outdir, g[len(prefix[0])+1:]),
-                                   "basename": os.path.basename(g),
-                                   "nameroot": os.path.splitext(os.path.basename(g))[0],
-                                   "nameext": os.path.splitext(os.path.basename(g))[1],
-                                   "class": "File" if fs_access.isfile(g) else "Directory"}
-                                  for g in fs_access.glob(fs_access.join(outdir, gb))])
-        print("r: " + str(r))
-        """
+        # TODO allow for outdir specification. require it to be in the shared filesystem
         #outputs = self.collect_outputs(self.outdir)
-        outputs = self.collect_outputs("/renci/irods")
-        # Maybe want some sort of callback
+
         self.output_callback(outputs, processStatus)
 
 
@@ -272,8 +238,12 @@ def makeDataCommonsTool(cwl_obj, **kwargs):
     # not a cwl object, so stop
     if not isinstance(cwl_obj, dict):
         raise WorkflowException("CWL object not a dict {}".format(cwl_obj))
+    if "class" not in cwl_obj:
+        raise WorkflowException("CWL object missing required class field")
     if cwl_obj.get("class") == "CommandLineTool":
         return DataCommonsCommandLineTool(cwl_obj, **kwargs)
+    if cwl_obj.get("class") == "ExpressionTool":
+        return cwltool.draft2tool.ExpressionTool(cwl_obj, **kwargs)
     elif cwl_obj.get("class") == "Workflow":
         return cwltool.workflow.Workflow(cwl_obj, **kwargs)
         #return DataCommonsWorkflow(cwl_obj, **kwargs)
@@ -289,6 +259,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
     def makeJobRunner(self, **kwargs):
         dockerReq, _ = self.get_requirement("DockerRequirement")
         # don't support the forced --use-container flag, or --no-container
+        # if DockerRequirement is specified, always use it
         if dockerReq:
             return DataCommonsDockerCommandLineJob()
         else:
@@ -302,12 +273,12 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         # modified from cwltool.draft2tool.CommandLineTool.job
         #jobname = uniquename(kwargs.get("name", shortname(self.tool.get("id", "job"))))
         tool_name = cwltool.process.shortname(self.tool.get("id"))
-        #print("tool name: {}".format(self.tool.get("id")))
         datestring = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
         jobname = "datacommonscwl-{}-{}".format(datestring, tool_name)
         builder = self._init_job(job_order, **kwargs)
 
         reffiles = copy.deepcopy(builder.files)
+        print("reffiles: {}".format(reffiles))
         j = self.makeJobRunner(**kwargs)
         j.builder = builder
         j.joborder = builder.job
@@ -323,13 +294,10 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         j.name = jobname
         j.output_callback = output_callback
         j.tool = self
-        j.outdir = kwargs.get("outdir", ".")
-        j.basedir = kwargs.get("basedir", ".")
-        j.outdir = "/renci/irods"
-        j.basedir = "/renci/irods"
-        #kferriter
-        #print("j.outdir: {}".format(j.outdir))
-        #print("j.basedir: {}".format(j.basedir))
+        j.outdir = kwargs.get("outdir", None)
+        j.basedir = kwargs.get("basedir", None)
+        #j.outdir = "/renci/irods"
+        #j.basedir = "/renci/irods"
 
         builder.pathmapper = None
         make_path_mapper_kwargs = kwargs
@@ -341,33 +309,6 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         builder.pathmapper = self.makePathMapper(reffiles, builder.stagedir, **make_path_mapper_kwargs)
         builder.requirements = j.requirements
 
-        # convert these into command line stdin/stdout/stderr stream redirection
-        """
-        if self.tool.get("stdin"):
-            with SourceLine(self.tool, "stdin", validate.ValidationException):
-                j.stdin = builder.do_eval(self.tool["stdin"])
-                reffiles.append({"class": "File", "path": j.stdin})
-
-        if self.tool.get("stderr"):
-            with SourceLine(self.tool, "stderr", validate.ValidationException):
-                j.stderr = builder.do_eval(self.tool["stderr"])
-                if os.path.isabs(j.stderr) or ".." in j.stderr:
-                    raise validate.ValidationException("stderr must be a relative path, got '%s'" % j.stderr)
-
-        if self.tool.get("stdout"):
-            with SourceLine(self.tool, "stdout", validate.ValidationException):
-                j.stdout = builder.do_eval(self.tool["stdout"])
-                if os.path.isabs(j.stdout) or ".." in j.stdout or not j.stdout:
-                    raise validate.ValidationException("stdout must be a relative path, got '%s'" % j.stdout)
-        """
-        if self.tool.get("stdin"):
-            j.stdin = builder.do_eval(self.tool.get("stdin"))
-        if self.tool.get("stderr"):
-            j.stderr = builder.do_eval(self.tool.get("stderr"))
-        if self.tool.get("stdout"):
-            j.stdout = builder.do_eval(self.tool.get("stdout"))
-
-
         #print(u"[job {}] command line bindings is {}".format(j.name, json.dumps(builder.bindings, indent=4)))
 
         def locToPath(p):
@@ -377,15 +318,23 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         # change "Location" field on file class to "Path"
         cwltool.pathmapper.visit_class(builder.bindings, ("File","Directory"), locToPath)
 
+        # pass tool stream definitions to job
+        # evaluate each to a real path, then update path to be relative to basedir
+        if self.tool.get("stdin"):
+            orig_stdin = builder.do_eval(self.tool.get("stdin"))
+            j.stdin = os.path.join(j.basedir, orig_stdin)
+            _logger.debug("updated stdin from '{}' to '{}'".format(orig_stdin, j.stdin))
+        if self.tool.get("stderr"):
+            orig_stderr = builder.do_eval(self.tool.get("stderr"))
+            j.stderr = os.path.join(j.basedir, orig_stderr)
+            _logger.debug("updated stderr from '{}' to '{}'".format(orig_stderr, j.stderr))
+        if self.tool.get("stdout"):
+            orig_stdout = builder.do_eval(self.tool.get("stdout"))
+            j.stdout = os.path.join(j.basedir, orig_stdout)
+            _logger.debug("updated stdout from '{}' to '{}'".format(orig_stdout, j.stdout))
+
         j.command_line = flatten(list(map(builder.generate_arg, builder.bindings)))
-        j.pathmapper = builder.pathmapper
-        """
-        j.collect_outputs = partial(
-            super().collect_output_ports, self.tool["outputs"], builder,
-            compute_checksum=kwargs.get("compute_checksum", True),
-            jobname=jobname,
-            readers=None)
-        """
+        #j.pathmapper = builder.pathmapper
 
         j.collect_outputs = partial(self.collect_output_ports, self.tool["outputs"], builder)
         yield j
@@ -477,19 +426,9 @@ class DataCommonsWorkflow(cwltool.workflow.Workflow):
         yield wj
         kwargs["part_of"] = "workflow %s" % wj.name
 
-        #TODO decide where to handle job dependency linking
-        # look at inputs linked to outputs, and set jobs with dependent inputs as children
-        """
-        for step in self.steps:
-            print("step: {}".format(step))
-            print("step input: {}".format(step.tool["inputs"]))
-            print("step output: {}".format(step.tool["outputs"]))
-            for inp in step.tool["inputs"]:
-                ev = builder.do_eval(inp["source"])
-                print(ev)
-        """
         for w in wj.job(builder.job, output_callbacks, **kwargs):
             yield w
+
     def visit(self, op):
         op(self.tool)
         for s in self.steps:
@@ -947,7 +886,7 @@ def _datacommons_popen(
         datetime.datetime.now(datetime.timezone.utc)
         + datetime.timedelta(days=365*50))
     schedule = "R/{}/P1Y".format(far_in_future_iso8601)
-    #2017-12-06T21:01:02.773Z
+    # example iso8601 format: 2017-12-06T21:01:02.773Z
 
     kwargs = {
         "name": jobname,

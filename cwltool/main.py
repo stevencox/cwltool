@@ -288,7 +288,6 @@ def single_job_executor(t,  # type: Process
                     r.builder = builder
                 if r.outdir:
                     output_dirs.add(r.outdir)
-                print("calling run on: {}".format(r.name))
                 #print("r: {}".format(vars(r)))
                 #print("r tool: {}".format(vars(r.tool)))
                 r.run(**kwargs)
@@ -927,9 +926,13 @@ def main(argsl=None,  # type: List[str]
             del args.workflow
             del args.job_order
 
-            #TODO kferriter possibly remove
+            #TODO kferriter possibly remove, not used
             if args.data_commons:
                 tool.data_commons = True
+
+            if not args.basedir:
+                job_input_basedir = job_order_object[1]
+                args.basedir = job_input_basedir
 
             (out, status) = executor(tool, job_order_object[0],
                                      makeTool=makeTool,
