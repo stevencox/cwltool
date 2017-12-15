@@ -303,7 +303,6 @@ def single_job_executor(t,  # type: Process
                     r.builder = builder
                 if r.outdir:
                     output_dirs.add(r.outdir)
-                print("calling run on: {}".format(r.name))
                 #print("r: {}".format(vars(r)))
                 #print("r tool: {}".format(vars(r.tool)))
                 r.run(**kwargs)

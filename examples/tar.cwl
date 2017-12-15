@@ -1,9 +1,11 @@
 cwlVersion: v1.0
 class: CommandLineTool
 baseCommand: ["tar", "-cf", "-"]
+requirements:
+  - class: InlineJavascriptRequirement
 inputs:
   - id: archive_file
-    type: string
+    type: File
   - id: file_list
     type:
       type: array
@@ -14,5 +16,5 @@ outputs:
   - id: archive_out
     type: File
     outputBinding:
-      glob: $(inputs.archive_file)
-stdout: $(inputs.archive_file)
+      glob: $(inputs.archive_file.basename)
+stdout: $(inputs.archive_file.basename)

@@ -1,4 +1,6 @@
-archive_file: test.tar
+archive_file:
+  class: File
+  path: test.tar
 file_list:
   - class: File
     path: test0
@@ -10,4 +12,3 @@ file_list:
     path: test3
   - class: File
     path: test4
-
