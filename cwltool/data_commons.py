@@ -242,7 +242,7 @@ def makeDataCommonsTool(cwl_obj, **kwargs):
         raise WorkflowException("CWL object missing required class field")
     if cwl_obj.get("class") == "CommandLineTool":
         return DataCommonsCommandLineTool(cwl_obj, **kwargs)
-    if cwl_obj.get("class") == "ExpressionTool":
+    elif cwl_obj.get("class") == "ExpressionTool":
         return cwltool.draft2tool.ExpressionTool(cwl_obj, **kwargs)
     elif cwl_obj.get("class") == "Workflow":
         return cwltool.workflow.Workflow(cwl_obj, **kwargs)
@@ -572,6 +572,9 @@ def set_job_dependencies(original_jobs):
     #       {'name':'job2', 'in':['#step1/output1'], 'out':['#step2/output1']}
     for j in original_jobs:
         _logger.info("compressing fields of job: {}".format(j))
+        if isinstance(j, cwltool.draft2tool.ExpressionTool.ExpressionJob):
+            # expression jobs run locally, no corresponding chronos job for it
+            continue
         if isinstance(j, cwltool.workflow.WorkflowJob):
             # this is the wrapper job representing a workflow, skip it
             continue
