@@ -1,6 +1,7 @@
-cwlVersion: v1.0
 class: CommandLineTool
-baseCommand: cat
+cwlVersion: v1.0
+baseCommand:
+  - cat
 inputs:
   - id: file
     type: File
@@ -9,6 +10,9 @@ inputs:
   - id: output_file
     type: string
 outputs:
-  standard_out:
+  - id: standard_out
     type: stdout
+    outputBinding: {}
 stdout: $(inputs.output_file)
+requirements:
+  - class: InlineJavascriptRequirement

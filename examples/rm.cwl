@@ -9,6 +9,6 @@ inputs:
 outputs:
   - id: standard_out
     type: stdout
-stdout: $(inputs.filename.location.replace("file://","")+".rm.cwl.stdout")
+stdout: $(inputs.filename.location.split("/").slice(-1)[0]+".rm.cwl.stdout")
 requirements:
   - class: InlineJavascriptRequirement

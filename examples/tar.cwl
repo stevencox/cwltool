@@ -5,7 +5,7 @@ requirements:
   - class: InlineJavascriptRequirement
 inputs:
   - id: archive_file
-    type: File
+    type: string
   - id: file_list
     type:
       type: array
@@ -16,5 +16,5 @@ outputs:
   - id: archive_out
     type: File
     outputBinding:
-      glob: $(inputs.archive_file.basename)
-stdout: $(inputs.archive_file.basename)
+      glob: $(inputs.archive_file)
+stdout: $(inputs.archive_file)
