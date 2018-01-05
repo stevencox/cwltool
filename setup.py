@@ -56,6 +56,7 @@ setup(name='cwltool',
           'schema-salad >= 2.6, < 3',
           'typing >= 3.5.3',
           'six >= 1.8.0',
+          'stars',
           'isodate',
           'tabulate'
       ],
