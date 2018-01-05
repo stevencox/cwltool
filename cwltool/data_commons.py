@@ -196,6 +196,7 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
         outputs = self.collect_outputs(self.basedir)
 
         # TODO allow for outdir specification. require it to be in the shared filesystem
+        # https://github.com/stevencox/cwltool/issues/10
         #outputs = self.collect_outputs(self.outdir)
 
         self.output_callback(outputs, processStatus)
@@ -546,12 +547,23 @@ def object_from_state(state, parms, frag_only, supportsMultipleInput, sourceFiel
     return inputobj
 
 
+def get_chronos_client():
+    return get_stars_client().scheduler.client
+
 def get_stars_client():
     # store client in static function var, so there's only one instance
     if not hasattr(get_stars_client, "stars_client"):
+        services_endpoint = os.getenv("DATACOMMONS_SERVICES_ENDPOINT")
+        chronos_endpoint = os.getenv("DATACOMMONS_CHRONOS_ENDPOINT")
+        if chronos_endpoint is None:
+            raise RuntimeError(
+                "The datacommons module requires environment variable "
+                "'DATACOMMONS_CHRONOS_ENDPOINT' to be defined.")
+
         get_stars_client.stars_client = Stars(
-            services_endpoints  = ["https://stars-app.renci.org/marathon"],
-            scheduler_endpoints = ["stars-app.renci.org/chronos"])
+            services_endpoints  = services_endpoint.split(",") if services_endpoint else None,
+            scheduler_endpoints = chronos_endpoint.split(",") if chronos_endpoint else None)
+
     return get_stars_client.stars_client
 
 """
@@ -661,13 +673,12 @@ def set_job_dependencies(original_jobs):
 Update a job in chronos with a schedule to run one time starting immediately
 """
 def run_job_now(jobname):
-    stars_client = get_stars_client()
-    chronos_client = stars_client.scheduler.client
+    chronos_client = get_chronos_client()
     chronos_job = chronos_client.search(name=jobname)[0]
     if "parents" in chronos_job:
         _logger.warn("Cannot update job '{}' to run now, is dependent job".format(jobname))
-    chronos_job["schedule"] = "R1//P1D"
-    _logger.debug("Setting job '{}' to run now".format(jobname))
+    chronos_job["schedule"] = "R1//P1Y"
+    _logger.debug("Setting job '{}' to run now.".format(jobname))
     chronos_client.update(chronos_job)
 
 
@@ -677,15 +688,14 @@ Take a list of dict objects. Each dict is in the format:
 For each element, attempt to update a job with given name, by adding parent jobs to it.
 """
 def update_dependencies_in_chronos(job_list):
-    stars_client = get_stars_client()
-    chronos_client = stars_client.scheduler.client
+    chronos_client = get_chronos_client()
     for j in job_list:
         # get first job in chronos with this name
         chronos_job = chronos_client.search(name=j["name"])[0]
         if len(j["parents"]) == 0:
             # is a root level job, is dependent on nothing
             # set to run immediately
-            chronos_job["schedule"] = "R1//P1D" #3rd segment doesn't matter with R1
+            chronos_job["schedule"] = "R1//P1Y" #3rd segment doesn't matter with R1
         else:
             # is a child job, set parents, and set no schedule
             if "parents" not in chronos_job:
@@ -741,8 +751,8 @@ jobs in chronos
 #TODO it doesn't appear to be automatically sorting by next scheduled run or by creation time
 """
 def show_upcoming_jobs_tree(count=20):
-    stars_client = get_stars_client()
-    jobs = stars_client.scheduler.list()
+    chronos_client = get_chronos_client()
+    jobs = chronos_client.list()
     headers = ["Job Name", "Next Scheduled Run", "Parent Jobs"]
     table = []
     """
@@ -807,8 +817,8 @@ def show_upcoming_jobs_tree(count=20):
 Return a string containing a table of the next [count] upcoming jobs
 """
 def show_upcoming_jobs(count=10):
-    stars_client = get_stars_client()
-    jobs = stars_client.scheduler.list()
+    chronos_client = get_chronos_client()
+    jobs = chronos_client.list()
 
     i = 0
     headers = ["Job Name", "Next Scheduled Run"]
@@ -829,10 +839,16 @@ def show_upcoming_jobs(count=10):
     return tabulate.tabulate(table, headers, tablefmt="grid")
 
 
+"""
+Verify that the job was created in a scheduler for a given stars client.
+Log the endpoints, and the job schedule.
+Return true if verified to exist, false otherwise.
+"""
 def verify_endpoint_job(stars_client, jobname):
     # TODO update stars package to allow chronos /search functionality
     # so it is not returning all jobs into local memory
     jobs = stars_client.scheduler.list()
+    found = False
     for j in jobs:
         if j["name"] == jobname:
             # job was created
@@ -851,8 +867,10 @@ def verify_endpoint_job(stars_client, jobname):
             if interval:
                 interval = isodate.parse_duration(interval)
 
+            found = True
             _logger.info("Job '{}' created at endpoint(s) {}. Repeating {} times, every {}, starting at {}"
                 .format(jobname, stars_client.scheduler.client.servers, repeat, interval, start))
+    return found
 
 
 """
@@ -861,14 +879,14 @@ Creates the jobs to initially run 50yrs in future, and every year after.
 Start time must be reduced later via api in order for them to run before that.
 """
 def _datacommons_popen(
-        jobname,
+        jobname, # type: Text
         commands,  # type: List[Text]
         env,  # type: Union[MutableMapping[Text, Text], MutableMapping[str, str]]
         cwd,  # type: Text
         container_command=None, # type string
-        stdin=None,
-        stdout=None,
-        stderr=None,
+        stdin=None, # type: Text (file path)
+        stdout=None, # type: Text (file path)
+        stderr=None, # type: Text (file path)
     ):
 
     _logger.debug("STARS: cmd: {}".format(commands))
@@ -885,9 +903,14 @@ def _datacommons_popen(
     if container_command:
         command = container_command + " " + command
 
+    # initially set job to *not run*. This really sets it to run in 100 years.
+    # NOTE: If cwltool crashes and you don't remove the job or reset the system the scheduler is
+    # running on before 100 years from now, it may run accidentally and that behavior is undefined.
+    # NOTE: The max python 2.7 and 3.6 year is 9999.  If this has not changed and you run
+    # this after the year 9899, it will cause an exception
     far_in_future_iso8601 = isodate.datetime_isoformat(
         datetime.datetime.now(datetime.timezone.utc)
-        + datetime.timedelta(days=365*50))
+        + datetime.timedelta(days=365*100))
     schedule = "R/{}/P1Y".format(far_in_future_iso8601)
     # example iso8601 format: 2017-12-06T21:01:02.773Z
 
@@ -916,7 +939,9 @@ def _datacommons_popen(
         **kwargs
     )
 
-    verify_endpoint_job(pivot, jobname)
+    if verify_endpoint_job(pivot, jobname):
+        rcode = 0
+    else:
+        rcode = 1
 
-    rcode = 0
     return rcode
