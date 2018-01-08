@@ -281,8 +281,6 @@ class CommandLineJob(JobBase):
     def run(self, pull_image=True, rm_container=True,
             rm_tmpdir=True, move_outputs="move", **kwargs):
         # type: (bool, bool, bool, Text, **Any) -> None
-        #kferriter
-        _logger.info("kwargs:{}".format(kwargs))
 
         self._setup(kwargs)
 

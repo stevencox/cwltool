@@ -304,7 +304,7 @@ class WorkflowJob(object):
             wo = {}
             self.processStatus = "permanentFail"
 
-        _logger.debug(u"[%s] completed %s", self.name, self.processStatus)
+        _logger.info(u"[%s] completed %s", self.name, self.processStatus)
 
         self.did_callback = True
 
@@ -330,7 +330,7 @@ class WorkflowJob(object):
 
             _logger.warning(u"[%s] completed %s", step.name, processStatus)
         else:
-            _logger.debug(u"[%s] completed %s", step.name, processStatus)
+            _logger.info(u"[%s] completed %s", step.name, processStatus)
 
         step.completed = True
         self.made_progress = True
@@ -731,7 +731,9 @@ class WorkflowStep(Process):
                     else:
                         validation_errors.append(
                             SourceLine(self.tool["out"], n).makeError(
-                                "Workflow step output '%s' does not correspond to" % shortname(step_entry["id"]))
+                                "Workflow step output '%s' does not correspond to"
+                                    % shortname(step_entry) if isinstance(step_entry, str)
+                                                            else shortname(step_entry["id"]))
                             + "\n" + SourceLine(self.embedded_tool.tool, "outputs").makeError(
                                 "  tool output (expected '%s')" % (
                                     "', '".join(
