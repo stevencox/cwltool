@@ -912,10 +912,6 @@ def main(argsl=None,  # type: List[str]
             if args.data_commons:
                 makeTool = data_commons.makeDataCommonsTool
 
-            # pass the datacommons makeTool
-            if args.data_commons:
-                makeTool = data_commons.makeDataCommonsTool
-
             tool = make_tool(document_loader, avsc_names, metadata, uri,
                              makeTool, make_tool_kwds)
 
