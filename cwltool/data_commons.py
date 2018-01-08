@@ -236,7 +236,6 @@ class DataCommonsDockerCommandLineJob(DataCommonsCommandLineJob):
 Make a tool object from a loaded cwl workflow/tool object
 """
 def makeDataCommonsTool(cwl_obj, **kwargs):
-    # not a cwl object, so stop
     if not isinstance(cwl_obj, dict):
         raise WorkflowException("CWL object not a dict {}".format(cwl_obj))
     if "class" not in cwl_obj:
@@ -247,7 +246,6 @@ def makeDataCommonsTool(cwl_obj, **kwargs):
         return cwltool.draft2tool.ExpressionTool(cwl_obj, **kwargs)
     elif cwl_obj.get("class") == "Workflow":
         return cwltool.workflow.Workflow(cwl_obj, **kwargs)
-        #return DataCommonsWorkflow(cwl_obj, **kwargs)
     else:
         raise WorkflowException("Unsupported CWL class type : {}".format(cwl_obj.get("class")))
 
@@ -297,8 +295,6 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         j.tool = self
         j.outdir = kwargs.get("outdir", None)
         j.basedir = kwargs.get("basedir", None)
-        #j.outdir = "/renci/irods"
-        #j.basedir = "/renci/irods"
 
         builder.pathmapper = None
         make_path_mapper_kwargs = kwargs
@@ -307,7 +303,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
             del make_path_mapper_kwargs["stagedir"]
 
         # possibly remove
-        builder.pathmapper = self.makePathMapper(reffiles, builder.stagedir, **make_path_mapper_kwargs)
+        #builder.pathmapper = self.makePathMapper(reffiles, builder.stagedir, **make_path_mapper_kwargs)
         builder.requirements = j.requirements
 
         #print(u"[job {}] command line bindings is {}".format(j.name, json.dumps(builder.bindings, indent=4)))
@@ -335,7 +331,6 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
             _logger.debug("updated stdout from '{}' to '{}'".format(orig_stdout, j.stdout))
 
         j.command_line = flatten(list(map(builder.generate_arg, builder.bindings)))
-        #j.pathmapper = builder.pathmapper
 
         j.collect_outputs = partial(self.collect_output_ports, self.tool["outputs"], builder)
         yield j
@@ -405,146 +400,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
                 else:
                     r = r[0]
 
-        #print("collect_output finished: {}".format(r))
         return r
-
-
-class DataCommonsPathMapper(cwltool.pathmapper.PathMapper):
-    def __init__(self, referenced_files, basedir):
-        self._pathmap = {}
-        self.stagedir = basedir
-        super().setup(dedup(referenced_files), basedir)
-
-
-class DataCommonsWorkflow(cwltool.workflow.Workflow):
-    def __init__(self, toolpath_object, **kwargs):
-        super(DataCommonsWorkflow, self).__init__(toolpath_object, **kwargs)
-
-    def job(self, job_order, output_callbacks, **kwargs):
-        #super(DataCommonsWorkflow, self).job(job_order, output_callbacks, **kwargs)
-        builder = self._init_job(job_order, **kwargs)
-        wj = DataCommonsWorkflowJob(self, **kwargs)
-        yield wj
-        kwargs["part_of"] = "workflow %s" % wj.name
-
-        for w in wj.job(builder.job, output_callbacks, **kwargs):
-            yield w
-
-    def visit(self, op):
-        op(self.tool)
-        for s in self.steps:
-            s.visit(op)
-
-class DataCommonsWorkflowJobStep(cwltool.workflow.WorkflowJobStep):
-    def __init__(self, step):
-        self.step = step
-        self.tool = step.tool
-        self.id = step.id
-        self.name = "step " + self.id
-
-    def job(self, joborder, output_callback, **kwargs):
-        kwargs["part_of"] = self.name
-        kwargs["name"] = self.name
-        _logger.debug("[{}] start".format(self.name))
-
-        for j in self.step.job(joborder, output_callback, **kwargs):
-            yield j
-
-class DataCommonsWorkflowJob(cwltool.workflow.WorkflowJob):
-    def __init__(self, workflow, **kwargs):
-        super().__init__(workflow, **kwargs)
-        self.steps = [DataCommonsWorkflowJobStep(s) for s in workflow.steps]
-
-    def do_output_callback(self, final_output_callback):
-        #TODO
-        super().do_output_callback(final_output_callback)
-
-    def receive_output(self, step, outputparms, final_output_callback, jobout, processStatus):
-        #TODO
-        super().receive_output(step, outputparms, final_output_callback, jobout, processStatus)
-
-    """
-    Modifying this to stop it from checking for input file existence
-    """
-    def try_make_job(self, step, final_output_callback, **kwargs):
-        inputparms = step.tool["inputs"]
-        outputparms = step.tool["outputs"]
-        #_logger.debug("[{}] inputparms: {}".format(self.name, inputparms))
-        #_logger.debug("[{}] outputparms: {}".format(self.name, outputparms))
-
-        valueFrom = {
-                i["id"]: i["valueFrom"] for i in step.tool["inputs"]
-                if "valueFrom" in i}
-
-        def postScatterEval(io):
-            # type: (Dict[Text, Any]) -> Dict[Text, Any]
-            shortio = {cwltool.process.shortname(k): v for k, v in io}
-
-            def valueFromFunc(k, v):  # type: (Any, Any) -> Any
-                if k in valueFrom:
-                    return cwltool.expression.do_eval(
-                        valueFrom[k], shortio, self.workflow.requirements,
-                        None, None, {}, context=v, debug=debug, js_console=js_console)
-                else:
-                    return v
-
-            return {k: valueFromFunc(k, v) for k, v in io.items()}
-        #TODO HANDLE SCATTER
-
-        inputobj = object_from_state(self.state, inputparms, False, False, "source")
-        #_logger.debug("inputobj: {}".format(inputobj))
-
-        callback = functools.partial(self.receive_output, step, outputparms, final_output_callback)
-
-        #_logger.debug("step: {}".format(self.name, step))
-        jobs = step.job(inputobj, callback, **kwargs)
-        for j in jobs:
-            yield j
-
-    def run(self, **kwargs):
-        _logger.debug("[{}] run called".format(self.name))
-        pass
-
-    def job(self, joborder, output_callback, **kwargs):
-        #print("self.tool['inputs']: {}".format(self.tool["inputs"]))
-        self.state = {}
-        for inp in self.tool["inputs"]:
-            iid = cwltool.process.shortname(inp["id"])
-            self.state[inp["id"]] = WorkflowStateItem(inp, copy.deepcopy(joborder[iid]), "success")
-
-        for step in self.steps:
-            for out in step.tool["outputs"]:
-                self.state[out["id"]] = None
-
-        for step in self.steps:
-            step.iterator = self.try_make_job(step, output_callback, **kwargs)
-            if step.iterator:
-                for subjob in step.iterator:
-                    yield subjob
-
-
-def object_from_state(state, parms, frag_only, supportsMultipleInput, sourceField, incomplete=False):
-    inputobj = {}
-    for inp in parms:
-        iid = inp["id"]
-        if frag_only:
-            iid = cwltool.process.shortname(iid)
-        if sourceField in inp:
-            connections = aslist(inp[sourceField])
-            for src in connections:
-                if src in state and state[src] is not None:
-                    if not cwltool.workflow.match_types(
-                            inp["type"], state[src], iid, inputobj,
-                            inp.get("linkMerge", ("merge_nested" if len(connections)>1 else None)),
-                            valueFrom=inp.get("valueFrom")):
-                        raise WorkflowException("Type mismatch between source and sink")
-        if inputobj.get(iid) is None and "default" in inp:
-            inputobj[iid] = copy.copy(inp["default"])
-        if iid not in inputobj and ("valueFrom" in inp or incomplete):
-            inputobj[iid] = None
-        if iid not in inputobj:
-            raise WorkflowException("Value for {} not specified".format(inp["id"]))
-    return inputobj
 
 
 def get_chronos_client():
@@ -565,6 +421,7 @@ def get_stars_client():
             scheduler_endpoints = chronos_endpoint.split(",") if chronos_endpoint else None)
 
     return get_stars_client.stars_client
+
 
 """
 When the cwl document is a workflow with multiple steps, check the inputs and outputs.
@@ -618,7 +475,6 @@ def set_job_dependencies(original_jobs):
             print("id: '{}', source: '{}'".format(id, source))
             # trailing hash fragment in the resource url is the simple id
             id = id[id.rfind("#"):]
-
 
             if isinstance(source, str):
                 # single source field value
