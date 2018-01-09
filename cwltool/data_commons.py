@@ -110,7 +110,7 @@ Subclass cwltool.job.CommandLineJob and simplify behavior
 """
 class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
     def __init__(self, **kwargs):
-        super().__init__()
+        super(DataCommonsCommandLineJob, self).__init__()
         self.container_command = None
 
     """
@@ -144,8 +144,8 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
 
             #print("Commands: " + str(commands))
             rcode = _datacommons_popen(
-                self.name,
-                commands,
+                jobname=self.name,
+                commands=commands,
                 env=env,
                 cwd=self.outdir,
                 container_command=self.container_command,
@@ -206,6 +206,7 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
 Subclass cwltool.job.CommandLineJob (DockerCommandLineJob)
 """
 class DataCommonsDockerCommandLineJob(DataCommonsCommandLineJob):
+    container_fmt_string = "docker run --rm -v /renci/irods:/renci/irods {}"
 
     def run(self, pull_image=True, rm_container=True,
             rm_tmpdir=True, move_outputs="move", **kwargs):
@@ -227,7 +228,7 @@ class DataCommonsDockerCommandLineJob(DataCommonsCommandLineJob):
                         raise WorkflowException("DockerRequirement specified without image tag")
 
         self.container_command = \
-            "docker run --rm -v /renci/irods:/irods " + str(image_tag) + " "
+            self.container_fmt_string.format(str(image_tag))
 
         self._execute([], env, rm_tmpdir=rm_tmpdir, move_outputs=move_outputs)
 
@@ -254,6 +255,7 @@ def makeDataCommonsTool(cwl_obj, **kwargs):
 Subclass of the cwltool CommandLineTool to override path mapping
 """
 class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
+    jobname_date_fmt = "%Y%m%d_%H%M%S.%f"
 
     def makeJobRunner(self, **kwargs):
         dockerReq, _ = self.get_requirement("DockerRequirement")
@@ -272,12 +274,11 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
         # modified from cwltool.draft2tool.CommandLineTool.job
         #jobname = uniquename(kwargs.get("name", shortname(self.tool.get("id", "job"))))
         tool_name = cwltool.process.shortname(self.tool.get("id"))
-        datestring = datetime.datetime.now().strftime("%Y%m%d_%H%M%S.%f")
+        datestring = datetime.datetime.now().strftime(self.jobname_date_fmt)
         jobname = "datacommonscwl-{}-{}".format(datestring, tool_name)
         builder = self._init_job(job_order, **kwargs)
 
         reffiles = copy.deepcopy(builder.files)
-        print("reffiles: {}".format(reffiles))
         j = self.makeJobRunner(**kwargs)
         j.builder = builder
         j.joborder = builder.job
@@ -472,7 +473,7 @@ def set_job_dependencies(original_jobs):
             # resource urls for the input field and the field it gets it value from
             id = inp["id"]
             source = inp["source"]
-            print("id: '{}', source: '{}'".format(id, source))
+            _logger.debug("original id: '{}', source: '{}'".format(id, source))
             # trailing hash fragment in the resource url is the simple id
             id = id[id.rfind("#"):]
 
@@ -731,7 +732,7 @@ def verify_endpoint_job(stars_client, jobname):
 
 """
 Send the commands to the data commons API.
-Creates the jobs to initially run 50yrs in future, and every year after.
+Creates the jobs to initially run 100 years in future, and every year after.
 Start time must be reduced later via api in order for them to run before that.
 """
 def _datacommons_popen(
@@ -776,13 +777,6 @@ def _datacommons_popen(
         "owner": "ted@job.org",
         "runAsUser": "evryscope",
         "schedule": schedule,
-        #"constraints":[
-        #    [
-        #        "hostname",
-        #        "EQUALS",
-        #        "stars-dw5.edc.renci.org"
-        #    ]
-        #],
         "execute_now": False,
         "shell": True
     }
