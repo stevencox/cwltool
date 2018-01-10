@@ -201,10 +201,12 @@ class TestDataCommons(unittest.TestCase):
             self.assertEqual(len(cat_jobs), 1)
             cat_job = cat_jobs[0]
             self.assertEqual(
-                cat_job["in"], 
+                cat_job["in"],
                 ["#echo_w/txt", "#echo_x/txt", "#echo_y/txt", "#echo_z/txt"])
             self.assertEqual(len(cat_job["parents"]), 7)
 
+    def get_next_chronos_run(self):
+        now = datetime.now(pytz.utc)
 
 
 class LogMonitor(logging.StreamHandler):
