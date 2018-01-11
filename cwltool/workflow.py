@@ -732,7 +732,7 @@ class WorkflowStep(Process):
                         validation_errors.append(
                             SourceLine(self.tool["out"], n).makeError(
                                 "Workflow step output '%s' does not correspond to"
-                                    % shortname(step_entry) if isinstance(step_entry, str)
+                                    % shortname(step_entry) if isinstance(step_entry, six.string_types)
                                                             else shortname(step_entry["id"]))
                             + "\n" + SourceLine(self.embedded_tool.tool, "outputs").makeError(
                                 "  tool output (expected '%s')" % (
