@@ -3,12 +3,16 @@ import sys
 import os
 import copy
 import json
-import datetime
 import uuid
 import functools
 import re
 import isodate
+import dateutil.parser
+import datetime
+import pytz
+import time
 import tabulate
+import six
 from pprint import pprint
 from typing import Any, Callable, Dict, List, Text, Union, cast
 from functools import partial
@@ -17,7 +21,6 @@ from collections import namedtuple
 import cwltool.load_tool
 import cwltool.resolver
 import cwltool.draft2tool
-import cwltool.main
 import cwltool.process
 import cwltool.pathmapper
 import cwltool.workflow
@@ -32,10 +35,13 @@ from schema_salad.sourceline import SourceLine, indent
 from stars.stars import Stars
 
 import logging
-_logger = logging.getLogger("datacommons")
+_logger = logging.getLogger(__name__)
 _logger.setLevel(logging.INFO)
 
 WorkflowStateItem = namedtuple("WorkflowStateItem", ["parameter", "value", "success"])
+
+def isoformat(datetime):
+    return datetime.isoformat().replace(" ", "T")
 
 def main(args=None):
     parser = argparse.ArgumentParser()
@@ -79,6 +85,10 @@ def main(args=None):
     options.basedir = os.getcwd()
     options.tool_help = None
     options.debug = True
+
+    # delayed import cwltool.main (circular dependency)
+    import cwltool.main
+
     # load the job files
     job, _ = cwltool.main.load_job_order(options, tool, sys.stdin)
     print("Job: ")
@@ -477,7 +487,7 @@ def set_job_dependencies(original_jobs):
             # trailing hash fragment in the resource url is the simple id
             id = id[id.rfind("#"):]
 
-            if isinstance(source, str):
+            if isinstance(source, six.string_types):
                 # single source field value
                 source = source[source.rfind("#"):]
                 new_j["in"].append(source)
@@ -485,13 +495,13 @@ def set_job_dependencies(original_jobs):
                 # using MultipleInputFeatureRequirement
                 # and this field has multiple input source links
                 # supports linkMerge: merge_flattened or linkMerge: merge_nested
-                # TODO have tested merge_flattened, need to test merge_nestedq
+                # TODO have tested merge_flattened, need to test merge_nested
                 for elem in source:
-                    if isinstance(elem, list):
+                    if isinstance(elem, list):      # merge nested
                         for nested_elem in elem:
                             nested_elem = nested_elem[nested_elem.rfind("#"):]
                             new_j["in"].append(nested_elem)
-                    else:
+                    else:                           # merge flattened
                         elem = elem[elem.rfind("#"):]
                         new_j["in"].append(elem)
 
@@ -500,7 +510,7 @@ def set_job_dependencies(original_jobs):
         new_j["out"] = []
         for outp in j_outp:
             _logger.debug("step out: {}".format(outp))
-            if isinstance(outp, str):
+            if isinstance(outp, six.string_types):
                 id = outp[outp.rfind("#"):]
             elif "id" in outp:
                 id = outp["id"]
@@ -572,32 +582,54 @@ def update_dependencies_in_chronos(job_list):
 Get the time of the next chronos run in UTC, given a chronos formatted schedule string
 """
 def get_next_chronos_run(schedule_str):
+    _logger.debug("schedule_str: {}".format(schedule_str))
     if not schedule_str:
         return None
 
     (repeat, start, interval) = schedule_str.split("/")
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(pytz.utc)
+    _logger.debug("now: {}".format(now))
     if start:
-        start = isodate.parse_datetime(start)
+        start = dateutil.parser.parse(start)
         if interval:
             interval = isodate.parse_duration(interval)
+            _logger.info("interval: {}".format(interval))
             elapsed_since_start = now - start
+
+            _logger.info("elapsed_since_start: {}".format(elapsed_since_start))
+            print(elapsed_since_start)
             if elapsed_since_start.total_seconds() < 0:
                 # hasn't started yet
                 next_time = start
             else:
                 # already started, calculate next
                 # number of job intervals that have passed since the job was started
-                interval_count = elapsed_since_start / interval
+
+                interval_count = elapsed_since_start.total_seconds() / interval.total_seconds()
+                #_logger.info("interval_count: {}".format(interval_count))
+
+                # we want elapsed_since_start % interval
+                _logger.debug("elapsed_seconds: {}".format(elapsed_since_start.total_seconds()))
+                _logger.debug("interval_seconds: {}".format(interval.total_seconds()))
+                mod = elapsed_since_start.total_seconds() % interval.total_seconds()
+                _logger.debug("mod: {}".format(mod))
+
+                time_to_next = datetime.timedelta(seconds=mod)
+
+                """
                 frac = interval_count % 1
-                time_to_next = frac * interval
+
+                time_to_next = datetime.timedelta(seconds=frac * interval.total_seconds())
+                """
                 next_time = now + time_to_next
+
     else:
         # created with no start time, defaulting to now (will be filled in by chronos later)
         next_time = now
 
     # localize time
-    next_time = next_time.replace(tzinfo=datetime.timezone.utc).astimezone(tz=None)
+    local_tz = pytz.timezone(time.strftime("%Z"))
+    next_time = next_time.replace(tzinfo=pytz.utc).astimezone(tz=local_tz)
     return next_time
 
 
@@ -630,7 +662,7 @@ def show_upcoming_jobs_tree(count=20):
             if name not in d:
                 d[name] = {}
             next_time = get_next_chronos_run(j["schedule"])
-            d[name]["next_time"] = isodate.datetime_isoformat(next_time) if next_time else ""
+            d[name]["next_time"] = isoformat(next_time) if next_time else ""
         else:
             # child job.
             # add top level element to dict with parents listed
@@ -717,7 +749,7 @@ def verify_endpoint_job(stars_client, jobname):
                 repeat = "infinite"
 
             if start:
-                start = isodate.parse_datetime(start)
+                start = dateutil.parser.parse(start)
             else:
                 start = "[immediately]"
 
@@ -765,8 +797,7 @@ def _datacommons_popen(
     # running on before 100 years from now, it may run accidentally and that behavior is undefined.
     # NOTE: The max python 2.7 and 3.6 year is 9999.  If this has not changed and you run
     # this after the year 9899, it will cause an exception
-    far_in_future_iso8601 = isodate.datetime_isoformat(
-        datetime.datetime.now(datetime.timezone.utc)
+    far_in_future_iso8601 = isoformat(datetime.datetime.now(pytz.utc)
         + datetime.timedelta(days=365*100))
     schedule = "R/{}/P1Y".format(far_in_future_iso8601)
     # example iso8601 format: 2017-12-06T21:01:02.773Z

@@ -6,9 +6,20 @@ import sys
 import os
 import chronos
 import logging
-from datetime import datetime
+
+import datetime
+import pytz
+import isodate
+import time
+
 from cwltool.main import main
 from cwltool import data_commons
+isoformat = data_commons.isoformat
+
+_logger = logging.getLogger(__name__)
+_logger.setLevel(logging.DEBUG)
+
+data_commons._logger.setLevel(logging.DEBUG)
 
 class TestDataCommons(unittest.TestCase):
 
@@ -142,10 +153,10 @@ class TestDataCommons(unittest.TestCase):
                 jobname_elems = kwargs["jobname"].split("-")
                 self.assertEqual("datacommonscwl", jobname_elems[0])
                 self.assertTrue(isinstance( # make sure the 2nd elem in jobname is a date
-                    datetime.strptime(
+                    datetime.datetime.strptime(
                         jobname_elems[1],
                         data_commons.DataCommonsCommandLineTool.jobname_date_fmt),
-                    datetime))
+                    datetime.datetime))
                 self.assertEqual(kwargs["commands"], ["echo", "-n", "-e", "hello"])
 
     def test_set_job_dependencies(self):
@@ -159,7 +170,7 @@ class TestDataCommons(unittest.TestCase):
 
             main(["--data-commons", "tests/data_commons/functional-wf.cwl"])
 
-            mock_update_dependencies.assert_called()
+            #mock_update_dependencies.assert_called()
             self.assertEqual(len(mock_update_dependencies.call_args_list), 1)
             args, kwargs = mock_update_dependencies.call_args_list[0]
             job_list = args[0]
@@ -205,8 +216,58 @@ class TestDataCommons(unittest.TestCase):
                 ["#echo_w/txt", "#echo_x/txt", "#echo_y/txt", "#echo_z/txt"])
             self.assertEqual(len(cat_job["parents"]), 7)
 
-    def get_next_chronos_run(self):
-        now = datetime.now(pytz.utc)
+    def test_get_next_chronos_run(self):
+        now = datetime.datetime.now(pytz.utc)
+        #start_str = isodate.datetime_isoformat(now)
+        #schedule_str = "R/{}/PT1H".format(start_str)
+
+        local_tz = pytz.timezone(time.strftime("%Z"))
+        local_now = now.replace(tzinfo=pytz.utc).astimezone(tz=local_tz)
+        _logger.debug("local_now: {}".format(local_now))
+        # test data
+        datetime_1 = now + datetime.timedelta(hours=-1, minutes=-12) # scheduled start time
+        schedule_1 = "R/{}/PT1H".format(isoformat(datetime_1)) # schedule with interval
+        delta_1 = datetime.timedelta(minutes=12) # expected delta to next run
+
+        datetime_2 = now + datetime.timedelta(hours=-12, minutes=-25)
+        schedule_2 = "R/{}/PT5H".format(isoformat(datetime_2))
+        delta_2 = datetime.timedelta(hours=2, minutes=25)
+
+        datetime_3 = now + datetime.timedelta(days=-7, hours=-1, minutes=-6)
+        schedule_3 = "R/{}/P2DT15M".format(isoformat(datetime_3))
+        delta_3 = datetime.timedelta(days=1, minutes=21)
+
+        datetime_4 = now + datetime.timedelta(days=-1, hours=-3, minutes=-5)
+        schedule_4 = "R/{}/PT1H".format(isoformat(datetime_4))
+        delta_4 = datetime.timedelta(minutes=5)
+
+        l = [
+            (datetime_1, schedule_1, delta_1),
+            (datetime_2, schedule_2, delta_2),
+            (datetime_3, schedule_3, delta_3),
+            (datetime_4, schedule_4, delta_4),
+        ]
+        try:
+            class FakeDatetime(datetime.datetime):
+                @classmethod
+                def now(cls, tz=None):
+                    return now # now in UTC
+
+            dt_bkp = datetime.datetime
+            datetime.datetime = FakeDatetime
+            for idx, (dt, schedule, delta) in enumerate(l):
+                _logger.debug("test set: {}, timedelta: {}".format(idx+1, delta))
+                #with patch.object(datetime.datetime.now, return_value=now) as mock_now:
+                next_time = data_commons.get_next_chronos_run(schedule)
+                self.assertEqual(next_time, local_now + delta)
+        except AssertionError as e:
+            _logger.error("calculated next run differed from expected next run by: {}".format(
+                next_time - (local_now + delta)
+            ))
+            raise e
+        finally:
+            datetime.datetime = dt_bkp
+
 
 
 class LogMonitor(logging.StreamHandler):
