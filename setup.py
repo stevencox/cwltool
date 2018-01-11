@@ -56,7 +56,7 @@ setup(name='cwltool',
           'schema-salad >= 2.6.20170927145003, < 3',
           'typing >= 3.5.3',
           'six >= 1.8.0',
-          'stars', # datacommons from here down
+          'stars',  # datacommons from here down
           'isodate',
           'pytz',
           'python-dateutil',
