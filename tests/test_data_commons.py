@@ -268,8 +268,6 @@ class TestDataCommons(unittest.TestCase):
         finally:
             datetime.datetime = dt_bkp
 
-        self.assertTrue(False)
-
 
 
 class LogMonitor(logging.StreamHandler):
