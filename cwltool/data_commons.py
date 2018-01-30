@@ -417,19 +417,26 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
 def get_chronos_client():
     return get_stars_client().scheduler.client
 
+
 def get_stars_client():
     # store client in static function var, so there's only one instance
     if not hasattr(get_stars_client, "stars_client"):
         services_endpoint = os.getenv("DATACOMMONS_SERVICES_ENDPOINT")
         chronos_endpoint = os.getenv("DATACOMMONS_CHRONOS_ENDPOINT")
-        if chronos_endpoint is None:
+        chronos_proto = os.getenv("DATACOMMONS_CHRONOS_PROTO")
+        if chronos_endpoint is None or chronos_proto is None:
             raise RuntimeError(
                 "The datacommons module requires environment variable "
-                "'DATACOMMONS_CHRONOS_ENDPOINT' to be defined.")
+                "'DATACOMMONS_CHRONOS_ENDPOINT' and 'DATACOMMONS_CHRONOS_PROTO' to be set.")
 
         get_stars_client.stars_client = Stars(
             services_endpoints  = services_endpoint.split(",") if services_endpoint else None,
             scheduler_endpoints = chronos_endpoint.split(",") if chronos_endpoint else None)
+
+        # override chronos client to use proto set in DATACOMMONS_CHRONOS_PROTO
+        # TODO update stars to allow proto specification
+        # https://github.com/stevencox/cwltool/issues/14
+        get_stars_client.stars_client.scheduler.client = chronos.connect(chronos_endpoint, proto=chronos_proto)
 
     return get_stars_client.stars_client
 
@@ -597,7 +604,7 @@ def get_next_chronos_run(schedule_str):
             elapsed_since_start = now - start
 
             _logger.info("elapsed_since_start: {}".format(elapsed_since_start))
-            print(elapsed_since_start)
+            #print(elapsed_since_start)
             if elapsed_since_start.total_seconds() < 0:
                 # hasn't started yet
                 next_time = start
