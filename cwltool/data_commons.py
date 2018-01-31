@@ -879,7 +879,6 @@ def _datacommons_popen(
         "name": jobname,
         "command": command,
         "owner": "ted@job.org",
-        "runAsUser": "evryscope",
         "schedule": schedule,
         "execute_now": False,
         "shell": True
