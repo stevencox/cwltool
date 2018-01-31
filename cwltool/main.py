@@ -316,8 +316,10 @@ def single_job_executor(t,  # type: Process
         raise WorkflowException(Text(e))
 
     if kwargs.get("data_commons",False):
-        # set job dependencies in chronos
+        # setup job dependencies not that all jobs have been constructed
         data_commons.set_job_dependencies(job_list)
+        # send jobs to chronos
+        data_commons.post_chronos_jobs()
         # don't relocate any outputs
         return (final_output[0], final_status[0])
 

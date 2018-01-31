@@ -41,6 +41,9 @@ _logger.setLevel(logging.INFO)
 
 WorkflowStateItem = namedtuple("WorkflowStateItem", ["parameter", "value", "success"])
 
+# store job json descriptions locally
+job_cache = []
+
 def isoformat(datetime):
     return datetime.isoformat().replace(" ", "T")
 
@@ -459,7 +462,7 @@ def set_job_dependencies(original_jobs):
     # jobs=[{'name':'job1', 'in':['#step1/input1'], 'out':['#step1/output1']},
     #       {'name':'job2', 'in':['#step1/output1'], 'out':['#step2/output1']}
     for j in original_jobs:
-        _logger.info("compressing fields of job: {}".format(j))
+        _logger.debug("compressing fields of job: {}".format(j))
         if isinstance(j, cwltool.draft2tool.ExpressionTool.ExpressionJob):
             # expression jobs run locally, no corresponding chronos job for it
             continue
@@ -486,7 +489,7 @@ def set_job_dependencies(original_jobs):
         for inp in j_inp:
             _logger.debug("step in: {}".format(inp))
             if "valueFrom" in inp and "source" not in inp:
-                print("Does not currently support valueFrom. Use source")
+                _logger.error("Does not currently support valueFrom. Use source")
                 return
             # resource urls for the input field and the field it gets it value from
             id = inp["id"]
@@ -541,7 +544,8 @@ def set_job_dependencies(original_jobs):
                 if inp in other_j["out"]:
                     j["parents"].append(other_j["name"])
     _logger.debug("dependencies determined")
-    update_dependencies_in_chronos(jobs)
+    #update_dependencies_in_chronos(jobs)
+    update_dependencies_in_cache(jobs)
 
 
 """
@@ -555,6 +559,43 @@ def run_job_now(jobname):
     chronos_job["schedule"] = "R1//P1Y"
     _logger.debug("Setting job '{}' to run now.".format(jobname))
     chronos_client.update(chronos_job)
+
+
+"""
+Take a list of dict objects. Each dict is in the format:
+{'name': <jobname>, 'parents': [<parentjobname>,...]}
+For each element, attempt to update a job with given name, by adding parent jobs to it.
+"""
+def update_dependencies_in_cache(job_list):
+    #chronos_client = get_chronos_client()
+    for j in job_list:
+        # get first job in cache with this name
+        #chronos_job = chronos_client.search(name=j["name"])[0]
+        cache_job = [c for c in job_cache if c["name"] == j["name"]]
+        if len(cache_job) == 0:
+            raise RuntimeError("Job '{}' not found in local job list".format(j["name"]))
+        elif len(cache_job) > 1:
+            _logger.warn("Multiple local jobs found with name '{}'".format(j["name"]))
+        cache_job = cache_job[0]
+
+        if "parents" not in cache_job:
+            cache_job["parents"] = []
+
+        if len(j["parents"]) == 0:
+            # is a root level job, is dependent on nothing
+            # set to run immediately
+            cache_job["schedule"] = "R1//P1Y" #3rd segment doesn't matter with R1
+        else:
+            # is a child job, set parents, and set no schedule
+            for p in j["parents"]:
+                if p not in cache_job["parents"]:
+                    _logger.debug("Adding {} as parent of {}".format(p, j["name"]))
+                    cache_job["parents"].append(p)
+            # job has parents, so cannot have schedule field
+            del cache_job["schedule"]
+
+        _logger.debug("Updated job '{}' in cache with:\n{}".format(j["name"], cache_job))
+        #chronos_client.update(chronos_job)
 
 
 """
@@ -588,6 +629,7 @@ def update_dependencies_in_chronos(job_list):
 
 """
 Get the time of the next chronos run in UTC, given a chronos formatted schedule string
+# example iso8601 format: 2017-12-06T21:01:02.773Z
 """
 def get_next_chronos_run(schedule_str):
     _logger.debug("schedule_str: {}".format(schedule_str))
@@ -771,6 +813,37 @@ def verify_endpoint_job(stars_client, jobname):
 
 
 """
+Post jobs to chronos in the order of the dependency hierarchy.
+No job will be posted before its parent jobs.
+"""
+def post_chronos_jobs():
+    global job_cache
+    stars_client = get_stars_client()
+    posted_names = []
+    while len(job_cache) > 0:
+        for j in job_cache:
+            if "parents" not in j or len(j["parents"]) == 0:
+                # not dependent on any other jobs, add now
+                resp = stars_client.scheduler.add_job(**j)
+                posted_names.append(j["name"])
+                continue
+            else:
+                # has parents listed, check to see if all parents have been posted first
+                all_parents_posted = True
+                for p in j["parents"]:
+                    if p not in posted_names:
+                        all_parents_posted = False
+                if all_parents_posted:
+                    resp = stars_client.scheduler.add_job(**j)
+                    posted_names.append(j["name"])
+                    continue
+
+        # remove those posted in this pass from the cache
+        job_cache = [jc for jc in job_cache if jc["name"] not in posted_names]
+
+
+
+"""
 Send the commands to the data commons API.
 Creates the jobs to initially run 100 years in future, and every year after.
 Start time must be reduced later via api in order for them to run before that.
@@ -800,15 +873,7 @@ def _datacommons_popen(
     if container_command:
         command = container_command + " " + command
 
-    # initially set job to *not run*. This really sets it to run in 100 years.
-    # NOTE: If cwltool crashes and you don't remove the job or reset the system the scheduler is
-    # running on before 100 years from now, it may run accidentally and that behavior is undefined.
-    # NOTE: The max python 2.7 and 3.6 year is 9999.  If this has not changed and you run
-    # this after the year 9899, it will cause an exception
-    far_in_future_iso8601 = isoformat(datetime.datetime.now(pytz.utc)
-        + datetime.timedelta(days=365*100))
-    schedule = "R/{}/P1Y".format(far_in_future_iso8601)
-    # example iso8601 format: 2017-12-06T21:01:02.773Z
+    schedule = "R//P1Y"
 
     kwargs = {
         "name": jobname,
@@ -824,13 +889,15 @@ def _datacommons_popen(
         # add container arguments to the kwargs
     #    kwargs["container"] = container_args
 
-    pivot.scheduler.add_job(
-        **kwargs
-    )
+    #pivot.scheduler.add_job(
+    #    **kwargs
+    #)
 
-    if verify_endpoint_job(pivot, jobname):
-        rcode = 0
-    else:
-        rcode = 1
+    #if verify_endpoint_job(pivot, jobname):
+    #    rcode = 0
+    #else:
+    #    rcode = 1
 
+    job_cache.append(kwargs)
+    rcode = 0
     return rcode
