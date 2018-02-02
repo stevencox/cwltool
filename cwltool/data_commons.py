@@ -361,7 +361,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
                 except Exception as e:
                     _logger.debug("Error collecting output for '{}'".format(port["id"]))
                     raise WorkflowException("Error collecting output for '{}'".format(port["id"]))
-        _logger.debug("collect_output_ports finished: {}".format(ret))
+        #_logger.debug("collect_output_ports finished: {}".format(ret))
         return ret
 
     def collect_output(self, schema, builder, outdir):
@@ -375,7 +375,7 @@ class DataCommonsCommandLineTool(cwltool.draft2tool.CommandLineTool):
             if "glob" in binding:
                 for gb in aslist(binding["glob"]):
                     gb = builder.do_eval(gb)
-                    _logger.debug("gb evaluated to: '{}'".format(gb))
+                    #_logger.debug("gb evaluated to: '{}'".format(gb))
                     if gb:
                         globpatterns.extend(aslist(gb))
 
@@ -462,7 +462,7 @@ def set_job_dependencies(original_jobs):
     # jobs=[{'name':'job1', 'in':['#step1/input1'], 'out':['#step1/output1']},
     #       {'name':'job2', 'in':['#step1/output1'], 'out':['#step2/output1']}
     for j in original_jobs:
-        _logger.debug("compressing fields of job: {}".format(j))
+        _logger.debug("compressing fields of job: {}".format(j.name))
         if isinstance(j, cwltool.draft2tool.ExpressionTool.ExpressionJob):
             # expression jobs run locally, no corresponding chronos job for it
             continue
@@ -487,17 +487,16 @@ def set_job_dependencies(original_jobs):
         new_j["name"] = j.name
         new_j["in"] = []
         for inp in j_inp:
-            _logger.debug("step in: {}".format(inp))
+            #_logger.debug("step in: {}".format(inp))
             if "valueFrom" in inp and "source" not in inp:
                 _logger.error("Does not currently support valueFrom. Use source")
                 return
             # resource urls for the input field and the field it gets it value from
             id = inp["id"]
             source = inp["source"]
-            _logger.debug("original id: '{}', source: '{}'".format(id, source))
             # trailing hash fragment in the resource url is the simple id
             id = id[id.rfind("#"):]
-
+            _logger.debug("input field id: " + id)
             if isinstance(source, six.string_types):
                 # single source field value
                 source = source[source.rfind("#"):]
@@ -520,7 +519,7 @@ def set_job_dependencies(original_jobs):
 
         new_j["out"] = []
         for outp in j_outp:
-            _logger.debug("step out: {}".format(outp))
+            #_logger.debug("step out: {}".format(outp))
             if isinstance(outp, six.string_types):
                 id = outp[outp.rfind("#"):]
             elif "id" in outp:
@@ -529,6 +528,7 @@ def set_job_dependencies(original_jobs):
             else:
                 print("Out field for step is misformatted")
                 return
+            _logger.debug("output field id: " + id)
             new_j["out"].append(id)
 
         jobs.append(new_j)
@@ -543,7 +543,7 @@ def set_job_dependencies(original_jobs):
             for other_j in [other_j for other_j in jobs if other_j["name"] != j["name"]]:
                 if inp in other_j["out"]:
                     j["parents"].append(other_j["name"])
-    _logger.debug("dependencies determined")
+    _logger.debug("dependencies determined\n")
     #update_dependencies_in_chronos(jobs)
     update_dependencies_in_cache(jobs)
 
@@ -783,10 +783,11 @@ Verify that the job was created in a scheduler for a given stars client.
 Log the endpoints, and the job schedule.
 Return true if verified to exist, false otherwise.
 """
-def verify_endpoint_job(stars_client, jobname):
+def verify_endpoint_job(jobname):
     # TODO update stars package to allow chronos /search functionality
     # so it is not returning all jobs into local memory
-    jobs = stars_client.scheduler.list()
+    chronos_client = get_chronos_client()
+    jobs = chronos_client.list()
     found = False
     for j in jobs:
         if j["name"] == jobname:
@@ -807,8 +808,8 @@ def verify_endpoint_job(stars_client, jobname):
                 interval = isodate.parse_duration(interval)
 
             found = True
-            _logger.info("Job '{}' created at endpoint(s) {}. Repeating {} times, every {}, starting at {}"
-                .format(jobname, stars_client.scheduler.client.servers, repeat, interval, start))
+            _logger.info("Job '{}' created at endpoint(s). Repeating {} times, every {}, starting at {}"
+                .format(jobname, repeat, interval, start))
     return found
 
 
@@ -898,5 +899,6 @@ def _datacommons_popen(
     #    rcode = 1
 
     job_cache.append(kwargs)
+    _logger.debug("job '{}' added to local job cache".format(kwargs["name"]))
     rcode = 0
     return rcode

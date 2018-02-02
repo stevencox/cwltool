@@ -24,77 +24,67 @@ data_commons._logger.setLevel(logging.DEBUG)
 class TestDataCommons(unittest.TestCase):
 
 
-    def test_datacommons_popen_no_container(self):
+    def setUp(self):
+        print("Running TestDataCommons.setUp")
         os.environ["DATACOMMONS_CHRONOS_ENDPOINT"] = "fakeendpoint.net/chronos"
+        os.environ["DATACOMMONS_CHRONOS_PROTO"] = "https"
 
-        with patch.object(data_commons, "verify_endpoint_job") as mock_verify_endpoint_job, \
-             patch.object(chronos.ChronosClient, "add") as mock_chronos_add:
+    def tearDown(self):
+        print("Running TestDataCommons.tearDown")
+        data_commons.job_cache = []
 
-            data_commons._datacommons_popen(
-                jobname="testjob",
-                commands=["echo", "hello", "world"],
-                env=None,
-                cwd="/testcwd",
-                container_command=None,
-                stdin="/testcwd/echo.stdin",
-                stdout="/testcwd/echo.stdout",
-                stderr="/testcwd/echo.stderr"
-            )
-            self.assertTrue(mock_chronos_add.called)
+    def test_datacommons_popen_no_container(self):
+        data_commons._datacommons_popen(
+            jobname="testjob",
+            commands=["echo", "hello", "world"],
+            env=None,
+            cwd="/testcwd",
+            container_command=None,
+            stdin="/testcwd/echo.stdin",
+            stdout="/testcwd/echo.stdout",
+            stderr="/testcwd/echo.stderr"
+        )
+        self.assertEqual(len(data_commons.job_cache), 1)
 
-            args, kwargs = mock_chronos_add.call_args
-            self.assertIsNotNone(args)
-            self.assertEqual(len(args), 1)
-            job = args[0]
+        job = data_commons.job_cache[0]
 
-            self.assertEqual(job["name"], "testjob")
-            self.assertEqual(job["command"],
-                    "echo hello world < /testcwd/echo.stdin > " \
-                    + "/testcwd/echo.stdout 2> /testcwd/echo.stderr")
-            self.assertEqual(job["owner"], "ted@job.org")
-            self.assertEqual(job["runAsUser"], "evryscope")
-            self.assertTrue("R/" in job["schedule"] and "/P1Y" in job["schedule"])
-            self.assertTrue(job["shell"])
+        self.assertEqual(job["name"], "testjob")
+        self.assertEqual(job["command"],
+                "echo hello world < /testcwd/echo.stdin > " \
+                + "/testcwd/echo.stdout 2> /testcwd/echo.stderr")
+        self.assertEqual(job["owner"], "ted@job.org")
+        self.assertTrue("R/" in job["schedule"] and "/P1Y" in job["schedule"])
+        self.assertTrue(job["shell"])
 
 
     def test_datacommons_popen_with_container(self):
-        os.environ["DATACOMMONS_CHRONOS_ENDPOINT"] = "fakeendpoint.net/chronos"
+        data_commons._datacommons_popen(
+            jobname="testjob",
+            commands=["echo", "hello", "world"],
+            env=None,
+            cwd="/testcwd",
+            container_command=
+                data_commons.DataCommonsDockerCommandLineJob.container_fmt_string \
+                              .format("centos:centos7"),
+            stdin="/testcwd/echo.stdin",
+            stdout="/testcwd/echo.stdout",
+            stderr="/testcwd/echo.stderr"
+        )
+        self.assertEqual(len(data_commons.job_cache), 1)
 
-        with patch.object(data_commons, "verify_endpoint_job") as mock_verify_endpoint_job, \
-             patch.object(chronos.ChronosClient, "add") as mock_chronos_add:
+        job = data_commons.job_cache[0]
 
-            data_commons._datacommons_popen(
-                jobname="testjob",
-                commands=["echo", "hello", "world"],
-                env=None,
-                cwd="/testcwd",
-                container_command=
-                    data_commons.DataCommonsDockerCommandLineJob.container_fmt_string \
-                                  .format("centos:centos7"),
-                stdin="/testcwd/echo.stdin",
-                stdout="/testcwd/echo.stdout",
-                stderr="/testcwd/echo.stderr"
-            )
-            self.assertTrue(mock_chronos_add.called)
-
-            args, kwargs = mock_chronos_add.call_args
-            self.assertIsNotNone(args)
-            self.assertEqual(len(args), 1)
-            job = args[0]
-
-            self.assertEqual(job["name"], "testjob")
-            self.assertEqual(job["command"],
-                    "docker run --rm -v /renci/irods:/renci/irods centos:centos7 " \
-                    + "echo hello world < /testcwd/echo.stdin > " \
-                    + "/testcwd/echo.stdout 2> /testcwd/echo.stderr")
-            self.assertEqual(job["owner"], "ted@job.org")
-            self.assertEqual(job["runAsUser"], "evryscope")
-            self.assertTrue("R/" in job["schedule"] and "/P1Y" in job["schedule"])
-            self.assertTrue(job["shell"])
+        self.assertEqual(job["name"], "testjob")
+        self.assertEqual(job["command"],
+                "docker run --rm -v /renci/irods:/renci/irods centos:centos7 " \
+                + "echo hello world < /testcwd/echo.stdin > " \
+                + "/testcwd/echo.stdout 2> /testcwd/echo.stderr")
+        self.assertEqual(job["owner"], "ted@job.org")
+        self.assertTrue("R/" in job["schedule"] and "/P1Y" in job["schedule"])
+        self.assertTrue(job["shell"])
 
 
     def test_verify_endpoint_job(self):
-        os.environ["DATACOMMONS_CHRONOS_ENDPOINT"] = "fakeendpoint.net/chronos"
         list_ret = [
             {'name':'job1',
                 'command':'ls',
@@ -115,16 +105,17 @@ class TestDataCommons(unittest.TestCase):
                 'schedule':'R1/9999-03-03T12:00:00.000Z/P1D',
                 'shell':True}
         ]
-
-        with patch.object(chronos.ChronosClient, "list", return_value=list_ret) as mock_chronos_list:
+        with patch.object(chronos.ChronosClient, "add") as mock_chronos_add, \
+             patch.object(chronos.ChronosClient, "list", return_value=list_ret) as mock_chronos_list, \
+             patch.object(data_commons, "show_upcoming_jobs_tree", return_value="") as mock_show_upcoming:
 
             log_monitor = LogMonitor()
             data_commons._logger.addHandler(log_monitor)
-            verified = data_commons.verify_endpoint_job(data_commons.get_stars_client(), "job1")
+            verified = data_commons.verify_endpoint_job("job1")
             self.assertTrue(verified)
-            verified = data_commons.verify_endpoint_job(data_commons.get_stars_client(), "job2")
+            verified = data_commons.verify_endpoint_job("job2")
             self.assertTrue(verified)
-            verified = data_commons.verify_endpoint_job(data_commons.get_stars_client(), "job3")
+            verified = data_commons.verify_endpoint_job("job3")
             self.assertTrue(verified)
 
             print(log_monitor.log_list)
@@ -136,45 +127,42 @@ class TestDataCommons(unittest.TestCase):
 
     def test_cwltool_main_datacommons_hello_workflow(self):
         os.environ["DATACOMMONS_CHRONOS_ENDPOINT"] = "fakeendpoint.net/chronos"
-        with patch.object(data_commons, "_datacommons_popen", return_value=0) \
-                as mock_popen, \
-             patch.object(data_commons, "set_job_dependencies") \
-                as mock_set_job_dependencies, \
-             patch.object(data_commons, "show_upcoming_jobs_tree", return_value="") \
-                as mock_show_upcoming:
+        os.environ["DATACOMMONS_CHRONOS_PROTO"] = "https"
+        with patch.object(data_commons, "post_chronos_jobs") as mock_post_chronos_jobs, \
+             patch.object(data_commons, "verify_endpoint_job") as mock_verify_endpoint_job, \
+             patch.object(data_commons, "show_upcoming_jobs_tree", return_value="") as mock_show_upcoming:
 
             main(["--data-commons", "tests/wf/hello-workflow.cwl", "--usermessage", "hello"])
 
-
-            popen_calls = mock_popen.call_args_list
-            self.assertEqual(len(popen_calls), 1)
-            for args, kwargs in popen_calls:
-                print(kwargs)
-                jobname_elems = kwargs["jobname"].split("-")
+            #popen_calls = mock_popen.call_args_list
+            self.assertEqual(len(data_commons.job_cache), 1)
+            #for args, kwargs in popen_calls:
+            for job in data_commons.job_cache:
+                jobname_elems = job["name"].split("-")
                 self.assertEqual("datacommonscwl", jobname_elems[0])
                 self.assertTrue(isinstance( # make sure the 2nd elem in jobname is a date
                     datetime.datetime.strptime(
                         jobname_elems[1],
                         data_commons.DataCommonsCommandLineTool.jobname_date_fmt),
                     datetime.datetime))
-                self.assertEqual(kwargs["commands"], ["echo", "-n", "-e", "hello"])
+                self.assertTrue(job["command"].startswith("echo -n -e hello"))
 
     def test_set_job_dependencies(self):
         jobs = []
-        with patch.object(data_commons, "_datacommons_popen", return_value=0) \
-                as mock_popen, \
-             patch.object(data_commons, "update_dependencies_in_chronos") \
-                as mock_update_dependencies, \
+        with patch.object(chronos.ChronosClient, "add") \
+                as mock_chronos_add, \
              patch.object(data_commons, "show_upcoming_jobs_tree", return_value="") \
-                as mock_show_upcoming:
+                as mock_show_upcoming, \
+             patch.object(data_commons, "update_dependencies_in_cache") \
+                as mock_update_dependencies_in_cache:
 
             main(["--data-commons", "tests/data_commons/functional-wf.cwl"])
 
-            #mock_update_dependencies.assert_called()
-            self.assertEqual(len(mock_update_dependencies.call_args_list), 1)
-            args, kwargs = mock_update_dependencies.call_args_list[0]
-            job_list = args[0]
-            print("job_list: {}".format(job_list))
+            mock_update_dependencies_in_cache.assert_called()
+            self.assertEqual(len(data_commons.job_cache), 0) # job removed from cache after sending to chronos
+            args, kwargs = mock_update_dependencies_in_cache.call_args_list[0]
+            job_list = args[0] # the job list is the only arg to the update_dependencies_in_cache
+            #print("job_list: {}".format(job_list))
             self.assertEqual(len(job_list), 8) # 8 jobs created by workflow
 
             # check jobs for correct in/out fields, and parent fields if applicable
