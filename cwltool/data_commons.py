@@ -220,7 +220,7 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
 Subclass cwltool.job.CommandLineJob (DockerCommandLineJob)
 """
 class DataCommonsDockerCommandLineJob(DataCommonsCommandLineJob):
-    container_fmt_string = "docker run --rm -v /renci/irods:/renci/irods {}"
+    container_fmt_string = "docker run --rm {}"
 
     def run(self, pull_image=True, rm_container=True,
             rm_tmpdir=True, move_outputs="move", **kwargs):
@@ -428,6 +428,7 @@ def get_stars_client():
         services_endpoint = os.getenv("DATACOMMONS_SERVICES_ENDPOINT")
         chronos_endpoint = os.getenv("DATACOMMONS_CHRONOS_ENDPOINT")
         chronos_proto = os.getenv("DATACOMMONS_CHRONOS_PROTO")
+
         if chronos_endpoint is None or chronos_proto is None:
             raise RuntimeError(
                 "The datacommons module requires environment variable "
@@ -872,7 +873,18 @@ def _datacommons_popen(
         command = command + " 2> " + stderr
 
     if container_command:
-        command = container_command + " " + command
+        # use the docker image specified by the tool
+        command = container_command + " '{}'".format(command) # puts the command in a single string
+    else:
+        irods_password = os.getenv("IRODS_PASSWORD")
+        if irods_password is None:
+            raise RuntimeError(
+                "The datacommons module requres the environment variable IRODS_PASSWORD to be set.")
+        # use our default docker image
+        container_command = \
+            "docker run --rm --privileged -e IRODS_PASSWORD={} heliumdatacommons/datacommons-base".format(
+                irods_password)
+        command = container_command + " '{}'".format(command)
 
     schedule = "R//P1Y"
 
