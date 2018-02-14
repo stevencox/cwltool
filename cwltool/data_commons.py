@@ -473,7 +473,7 @@ def set_job_dependencies(original_jobs):
         if not hasattr(j, "step") or not j.step \
                 or not hasattr(j.step, "iterable") or not j.step.iterable:
             #job is not part of a workflow, cannot be dependent on other jobs
-            run_job_now(j.name)
+            #run_job_now(j.name)
             continue
         step = j.step
         #if not hasattr(step, "iterable") or not step.iterable:
