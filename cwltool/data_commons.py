@@ -872,11 +872,16 @@ def _datacommons_popen(
     if stderr:
         command = command + " 2> " + stderr
 
+
     if container_command:
         # use the docker image specified by the tool
-        command = container_command + " '{}'".format(command) # puts the command in a single string
-    else:
+
         irods_password = os.getenv("IRODS_PASSWORD")
+        if irods_password: # this user-specified image uses the irods Fuse setup
+            container_command += " --rm --privileged -e IRODS_PASSWORD={}"
+
+        command = container_command += " '{}'".format(command) # puts the command in a single string
+    else:
         if irods_password is None:
             raise RuntimeError(
                 "The datacommons module requres the environment variable IRODS_PASSWORD to be set.")
