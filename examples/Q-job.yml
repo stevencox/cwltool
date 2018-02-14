@@ -1,0 +1,8 @@
+t:
+  class: File
+  path: wgEncodeHaibTfbsHct116Pol24h8V0416101AlnRep1.bam
+c:
+  class: File
+  path: wgEncodeHaibTfbsHct116RxlchV0416101AlnRep1.bam
+o: Hct116Pol24h8Rep1
+options: -wbt -wbc
