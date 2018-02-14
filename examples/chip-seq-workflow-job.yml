@@ -1,0 +1,18 @@
+wget_list:
+  - ftp://hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeHaibTfbs/wgEncodeHaibTfbsHct116Pol24h8V0416101AlnRep1.bam
+  - ftp://hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeHaibTfbs/wgEncodeHaibTfbsHct116Pol24h8V0416101AlnRep1.bam.bai
+  - ftp://hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeHaibTfbs/wgEncodeHaibTfbsHct116Pol24h8V0416101AlnRep2.bam
+  - ftp://hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeHaibTfbs/wgEncodeHaibTfbsHct116Pol24h8V0416101AlnRep2.bam.bai
+  - ftp://hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeHaibTfbs/wgEncodeHaibTfbsHct116RxlchV0416101AlnRep1.bam
+  - ftp://hgdownload.cse.ucsc.edu/goldenPath/hg19/encodeDCC/wgEncodeHaibTfbs/wgEncodeHaibTfbsHct116RxlchV0416101AlnRep1.bam.bai
+wget_directory: /renci/irods/chipseq_input
+wget_options: -N
+
+Q_t:
+  class: File
+  path: /renci/irods/chipseq_input/wgEncodeHaibTfbsHct116Pol24h8V0416101AlnRep1.bam
+Q_c:
+  class: File
+  path: /renci/irods/chipseq_input/wgEncodeHaibTfbsHct116RxlchV0416101AlnRep1.bam
+Q_o: Hct116Pol24h8Rep1
+Q_options: -wbt -wbc
