@@ -14,5 +14,3 @@ outputs:
     type: stdout
     outputBinding: {}
 stdout: $(inputs.output_file)
-requirements:
-  - class: InlineJavascriptRequirement

@@ -125,7 +125,7 @@ Subclass cwltool.job.CommandLineJob and simplify behavior
 class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
     def __init__(self, **kwargs):
         super(DataCommonsCommandLineJob, self).__init__()
-        self.container_command = None
+        self.container_image_name = None
 
     """
     Overriding job setup to ignore local path resolutions
@@ -162,7 +162,7 @@ class DataCommonsCommandLineJob(cwltool.job.CommandLineJob):
                 commands=commands,
                 env=env,
                 cwd=self.outdir,
-                container_command=self.container_command,
+                container_image_name=self.container_image_name,
                 stdin=self.stdin,
                 stdout=self.stdout,
                 stderr=self.stderr
@@ -241,8 +241,7 @@ class DataCommonsDockerCommandLineJob(DataCommonsCommandLineJob):
                     else:
                         raise WorkflowException("DockerRequirement specified without image tag")
 
-        self.container_command = \
-            self.container_fmt_string.format(str(image_tag))
+        self.container_image_name = image_tag
 
         self._execute([], env, rm_tmpdir=rm_tmpdir, move_outputs=move_outputs)
 
@@ -855,7 +854,7 @@ def _datacommons_popen(
         commands,  # type: List[Text]
         env,  # type: Union[MutableMapping[Text, Text], MutableMapping[str, str]]
         cwd,  # type: Text
-        container_command=None, # type string
+        container_image_name=None, # type string
         stdin=None, # type: Text (file path)
         stdout=None, # type: Text (file path)
         stderr=None, # type: Text (file path)
@@ -873,15 +872,16 @@ def _datacommons_popen(
         command = command + " 2> " + stderr
 
 
-    if container_command:
+    if container_image_name:
         # use the docker image specified by the tool
-
+        container_command = "docker run --rm "
         irods_password = os.getenv("IRODS_PASSWORD")
         if irods_password: # this user-specified image uses the irods Fuse setup
-            container_command += " --rm --privileged -e IRODS_PASSWORD={}"
+            container_command += "--privileged -e IRODS_PASSWORD={} ".format(irods_password)
 
-        command = container_command += " '{}'".format(command) # puts the command in a single string
-    else:
+        command = container_command + container_image_name + " '{}'".format(command) # puts the command in a single string
+    else: # no custom image specified, use default base image
+        irods_password = os.getenv("IRODS_PASSWORD")
         if irods_password is None:
             raise RuntimeError(
                 "The datacommons module requres the environment variable IRODS_PASSWORD to be set.")
