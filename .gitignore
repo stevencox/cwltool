@@ -30,3 +30,6 @@ typeshed/2and3/ruamel/yaml
 
 #mypy
 .mypy_cache/
+
+# OSX ignore
+.DS_Store
