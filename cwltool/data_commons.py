@@ -425,13 +425,16 @@ def get_stars_client():
     # store client in static function var, so there's only one instance
     if not hasattr(get_stars_client, "stars_client"):
         services_endpoint = os.getenv("DATACOMMONS_SERVICES_ENDPOINT")
-        chronos_endpoint = os.getenv("DATACOMMONS_CHRONOS_ENDPOINT")
-        chronos_proto = os.getenv("DATACOMMONS_CHRONOS_PROTO")
-
-        if chronos_endpoint is None or chronos_proto is None:
-            raise RuntimeError(
-                "The datacommons module requires environment variable "
-                "'DATACOMMONS_CHRONOS_ENDPOINT' and 'DATACOMMONS_CHRONOS_PROTO' to be set.")
+        c = os.getenv("CHRONOS_URL")
+        if not c:
+            raise RuntimeError("The datacommons module requires CHRONOS_URL to be set")
+        urlp = six.moves.urllib.parse.urlparse(c)
+        if urlp.scheme:
+            chronos_proto = urlp.scheme
+            chronos_endpoint = c[len(urlp.scheme) + 3:]
+        else:
+            chronos_proto = "https"
+            chronos_endpoint = c
 
         get_stars_client.stars_client = Stars(
             services_endpoints  = services_endpoint.split(",") if services_endpoint else None,
