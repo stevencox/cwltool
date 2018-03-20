@@ -874,13 +874,19 @@ def _datacommons_popen(
     if stderr:
         command = command + " 2> " + stderr
 
+    # all environment variables in this context that start with IRODS_ will be passed to worker containers
+    env_str = ""
+    for k,v in six.iteritems(os.environ):
+        if k.startswith("IRODS_"):
+            env_str += "-e {}='{}' ".format(k,v)
 
     if container_image_name:
         # use the docker image specified by the tool
         container_command = "docker run --rm "
         irods_password = os.getenv("IRODS_PASSWORD")
+
         if irods_password: # this user-specified image uses the irods Fuse setup
-            container_command += "--privileged -e IRODS_PASSWORD={} ".format(irods_password)
+            container_command += "--privileged {} ".format(env_str)
 
         command = container_command + container_image_name + " '{}'".format(command) # puts the command in a single string
     else: # no custom image specified, use default base image
@@ -890,8 +896,7 @@ def _datacommons_popen(
                 "The datacommons module requres the environment variable IRODS_PASSWORD to be set.")
         # use our default docker image
         container_command = \
-            "docker run --rm --privileged -e IRODS_PASSWORD={} heliumdatacommons/datacommons-base".format(
-                irods_password)
+            "docker run --rm --privileged {} heliumdatacommons/datacommons-base".format(env_str)
         command = container_command + " '{}'".format(command)
 
     schedule = "R//P1Y"
