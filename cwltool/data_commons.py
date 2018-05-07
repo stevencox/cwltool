@@ -888,7 +888,7 @@ def _datacommons_popen(
         if irods_password: # this user-specified image uses the irods Fuse setup
             container_command += "--privileged {} ".format(env_str)
 
-        command = container_command + container_image_name + " '{}'".format(command) # puts the command in a single string
+        command = container_command + container_image_name + " _cwl_worker '{}'".format(command) # puts the command in a single string
     else: # no custom image specified, use default base image
         irods_password = os.getenv("IRODS_PASSWORD")
         if irods_password is None:
@@ -896,8 +896,8 @@ def _datacommons_popen(
                 "The datacommons module requres the environment variable IRODS_PASSWORD to be set.")
         # use our default docker image
         container_command = \
-            "docker run --rm --privileged {} heliumdatacommons/datacommons-base".format(env_str)
-        command = container_command + " '{}'".format(command)
+            "docker run --rm --privileged {} heliumdatacommons/datacommons-base ".format(env_str)
+        command = container_command + " _cwl_worker '{}'".format(command)
 
     schedule = "R//P1Y"
 
