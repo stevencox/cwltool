@@ -1,4 +1,5 @@
 from __future__ import absolute_import
+import os
 import copy
 import functools
 import json
@@ -281,7 +282,7 @@ class WorkflowJob(object):
         else:
             # tmp_outdir_prefix defaults to tmp, so this is unlikely to be used
             self.outdir = tempfile.mkdtemp()
-
+        os.chmod(self.outdir, 0o777)
         self.name = uniquename(u"workflow %s" % kwargs.get("name", shortname(self.workflow.tool.get("id", "embedded"))))
 
         _logger.debug(u"[%s] initialized from %s", self.name,

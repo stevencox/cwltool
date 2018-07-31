@@ -438,6 +438,7 @@ class CommandLineTool(Process):
         if dockerReq and kwargs.get("use_container"):
             out_prefix = kwargs.get("tmp_outdir_prefix")
             j.outdir = kwargs.get("outdir") or tempfile.mkdtemp(prefix=out_prefix)
+            os.chmod(j.outdir, 0o777)
             tmpdir_prefix = kwargs.get('tmpdir_prefix')
             j.tmpdir = kwargs.get("tmpdir") or tempfile.mkdtemp(prefix=tmpdir_prefix)
             j.stagedir = tempfile.mkdtemp(prefix=tmpdir_prefix)

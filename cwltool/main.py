@@ -264,6 +264,7 @@ def single_job_executor(t,  # type: Process
     kwargs["outdir"] = tempfile.mkdtemp(prefix=kwargs["tmp_outdir_prefix"]) if kwargs.get(
         "tmp_outdir_prefix") else tempfile.mkdtemp()
     output_dirs.add(kwargs["outdir"])
+    os.chmod(kwargs["outdir"], 0o777)
     kwargs["mutation_manager"] = MutationManager()
 
     jobReqs = None
