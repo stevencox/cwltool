@@ -19,7 +19,7 @@ needs_pytest = {'pytest', 'test', 'ptr'}.intersection(sys.argv)
 pytest_runner = ['pytest-runner'] if needs_pytest else []
 
 setup(name='cwltool',
-      version='1.0',
+      version='1.0.20171107133715',
       description='Common workflow language reference implementation',
       long_description=open(README).read(),
       author='Common workflow language working group',
@@ -67,7 +67,7 @@ setup(name='cwltool',
           'console_scripts': ["cwltool=cwltool.main:main"]
       },
       zip_safe=True,
-      cmdclass={'egg_info': tagger},
+      #cmdclass={'egg_info': tagger},
       classifiers=[
           'Development Status :: 5 - Production/Stable',
           'Environment :: Console',
