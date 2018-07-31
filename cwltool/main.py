@@ -277,6 +277,7 @@ def single_job_executor(t,  # type: Process
     finaloutdir = os.path.abspath(kwargs.get("outdir")) if kwargs.get("outdir") else None
     kwargs["outdir"] = tempfile.mkdtemp(prefix=kwargs["tmp_outdir_prefix"]) if kwargs.get(
         "tmp_outdir_prefix") else tempfile.mkdtemp()
+    os.chmod(kwargs["outdir"], 0o777)
     output_dirs.add(kwargs["outdir"])
     kwargs["mutation_manager"] = MutationManager()
 
